@@ -1,0 +1,209 @@
+/* ── Reset / Global ──────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: #f4f6fb;
+  color: #1a2840;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.app-wrapper {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.header {
+  padding: 26px 0 16px;
+  border-bottom: 2px solid #d8e0ea;
+}
+
+.main-title {
+  margin: 0 0 5px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0d1b2a;
+  letter-spacing: -0.3px;
+}
+
+.main-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #5a6a80;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.main-tabs { margin-top: 0; border-bottom: none !important; }
+
+.tab {
+  padding: 11px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a6a80;
+  background-color: #edf0f7;
+  border: 1px solid #d8e0ea;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  margin-right: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.tab:hover { color: #1a5fb4; background-color: #e4eaf5; }
+
+.tab--selected {
+  background-color: #f4f6fb !important;
+  color: #1a5fb4 !important;
+  border-bottom: 2px solid #f4f6fb !important;
+}
+
+.outer-tab-content {
+  background-color: #f4f6fb;
+  border: 1px solid #d8e0ea;
+  border-radius: 0 6px 6px 6px;
+  padding: 24px 24px 20px;
+  min-height: 640px;
+}
+
+/* ── Sidebar layout ──────────────────────────────────────────────────────── */
+.tab-with-sidebar {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+.tab-content {}
+
+.tab-subtitle {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: #5a6a80;
+  line-height: 1.55;
+  border-left: 3px solid #1a5fb4;
+  padding-left: 9px;
+}
+
+.ctrl-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #7a90b0;
+  margin-bottom: 5px;
+  margin-top: 0;
+}
+
+.ctrl-dropdown { font-size: 13px; }
+
+/* Vertical slider (Tab 1 and Tab 3 left panel) */
+.tab1-slider { margin-left: 8px; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1a5fb4;
+  background-color: #e8edf8;
+  border: 1px solid #b0c4e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.btn-sm:hover { background-color: #d0ddf4; }
+
+/* ── Dimension legend in sidebar ─────────────────────────────────────────── */
+.dim-legend-sidebar {
+  margin-top: 4px;
+  padding: 8px 10px;
+  background-color: #edf0f7;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #1a2840;
+}
+
+/* ── Country legend (parallel coords) ───────────────────────────────────── */
+.country-legend {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background-color: #edf0f7;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+/* ── Plotly chart ────────────────────────────────────────────────────────── */
+.js-plotly-plot { border-radius: 8px; overflow: hidden; }
+
+/* ── Landing Page ────────────────────────────────────────────────────────── */
+.landing-page {
+  max-width: 780px;
+  padding: 4px 0 20px;
+}
+
+.lp-section { margin-bottom: 4px; }
+
+.lp-h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0d1b2a;
+  margin: 0 0 12px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid #d8e0ea;
+}
+
+.lp-p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #2a3a50;
+  line-height: 1.65;
+}
+
+.lp-hr {
+  border: none;
+  border-top: 1px solid #d8e0ea;
+  margin: 24px 0;
+}
+
+.lp-dim-block {
+  margin: 10px 0 14px 10px;
+}
+
+.lp-dim-row {
+  margin-bottom: 7px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.lp-ul {
+  padding-left: 20px;
+  margin: 6px 0 0;
+}
+
+.lp-li {
+  margin-bottom: 11px;
+  font-size: 14px;
+  color: #2a3a50;
+  line-height: 1.6;
+}
