@@ -1,6 +1,6 @@
 # Little Project on Human Values
 
-> Exploring what people across Europe value — and why it differs.
+> Exploring what people across Europe value - and why it differs.
 
 An interactive data dashboard built with Python and Plotly Dash, visualising [Schwartz basic human values](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=7gi3pqoAAAAJ&citation_for_view=7gi3pqoAAAAJ:d1gkVwhDpl0C) across 14 European countries using data from the European Social Survey (ESS), Rounds 1–11 (2002–2023).
 
@@ -10,7 +10,7 @@ An interactive data dashboard built with Python and Plotly Dash, visualising [Sc
 
 ## What it shows
 
-The Schwartz model proposes that 10 basic human values — arranged in a circular structure — are universal across cultures. Neighbouring values reinforce each other; opposing values compete. The dashboard explores how these value profiles differ across countries, over time, and in relation to macro-level societal indicators.
+The Schwartz model proposes that 10 basic human values - arranged in a circular structure - are universal across cultures. Neighbouring values reinforce each other; opposing values compete. The dashboard explores how these value profiles differ across countries, over time, and in relation to macro-level societal indicators.
 
 | Tab | What you see |
 |-----|-------------|
@@ -25,10 +25,10 @@ The Schwartz model proposes that 10 basic human values — arranged in a circula
 
 ## Tech stack
 
-- **Python 3.12** — pandas, numpy, scipy, scikit-learn
-- **Plotly Dash 2.18** — interactive charts and layout
-- **Gunicorn** — WSGI server for deployment
-- **Render.com** — hosting
+- **Python 3.12** - pandas, numpy, scipy, scikit-learn
+- **Plotly Dash 2.18** - interactive charts and layout
+- **Gunicorn** - WSGI server for deployment
+- **Render.com** - hosting
 
 ---
 
@@ -42,7 +42,7 @@ cd human-values-project/dashboard
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the app (uses precomputed datasets — no raw data needed)
+# Run the app (uses precomputed datasets - no raw data needed)
 python app.py
 ```
 
