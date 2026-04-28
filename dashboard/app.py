@@ -793,6 +793,15 @@ app.layout = html.Div([
             'ESS Rounds 1-11 (2002-2023), linked to macro indicators and social attitudes.',
             className='main-subtitle',
         ),
+        html.P(
+            'by Christopher Vantis',
+            style={
+                'font-style': 'italic',
+                'font-size': '12px',
+                'color': '#7a90b0',
+                'margin': '4px 0 0',
+            },
+        ),
     ], className='header'),
 
     dcc.Tabs(
