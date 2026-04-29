@@ -392,6 +392,55 @@ landing = html.Div([
     html.Hr(className='lp-hr'),
 
     html.Div([
+        html.H2('Limitations', className='lp-h2'),
+
+        html.Div([
+            html.B('1. Pan-cultural regularities'),
+            html.P([
+                'Schwartz and Bardi (2001) showed across 13 samples from 56 countries that value '
+                'hierarchies share a remarkably stable cross-cultural structure: Benevolence and '
+                'Universalism rank near the top in virtually all societies; Stimulation, Tradition, '
+                'and Power near the bottom. If all 14 countries here show a positive delta for '
+                'Benevolence/Universalism and a negative one for Stimulation, that reflects a '
+                'universal regularity - not a country-specific finding. ',
+                html.B('What is informative are the deviations of individual countries from the '
+                       '14-country average.'),
+            ], className='lp-p', style={'margin-top': '4px'}),
+        ], className='lp-limitation'),
+
+        html.Div([
+            html.B('2. Measurement invariance'),
+            html.P([
+                'Davidov, Schmidt, and Schwartz (2008) demonstrated that PVQ-21 items in '
+                'cross-national comparisons often achieve only configural invariance, rarely '
+                'metric, and almost never scalar invariance. Mean-centring (ipsatisation) '
+                'mitigates this problem but does not eliminate it. Statements such as '
+                '"Universalism ranks higher in France than in Hungary" should therefore be '
+                'read as ',
+                html.Em('indicators of structural differences'),
+                ' - not as precise quantifications.',
+            ], className='lp-p', style={'margin-top': '4px'}),
+        ], className='lp-limitation'),
+
+        html.Div([
+            html.B('3. Within- vs. between-country variance'),
+            html.P([
+                'Magun, Rudnev, and Schmidt (2016) showed via latent class analysis that '
+                'value diversity ',
+                html.Em('within'),
+                ' European countries is often greater than the diversity ',
+                html.Em('between'),
+                ' them. A national value profile is an aggregate, not a cultural essence. '
+                'Individual-level profiles (Tab 4) complement the country-level view, '
+                'but even these are a stratified sample - not a population census.',
+            ], className='lp-p', style={'margin-top': '4px'}),
+        ], className='lp-limitation'),
+
+    ], className='lp-section'),
+
+    html.Hr(className='lp-hr'),
+
+    html.Div([
         html.H2('Value Space: Glyph Placement & Clustering', className='lp-h2'),
 
         html.P([
