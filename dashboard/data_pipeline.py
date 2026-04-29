@@ -18,18 +18,32 @@ GINI_PATH   = MAKRO_DIR / "gini_index_unvollständig.xlsx"
 UNEMP_PATH  = MAKRO_DIR / "unemployment.xlsx"
 
 COUNTRIES = {
-    'BE': 'Belgium',     'CH': 'Switzerland', 'DE': 'Germany',
-    'ES': 'Spain',       'FI': 'Finland',     'FR': 'France',
-    'HU': 'Hungary',     'IE': 'Ireland',     'NL': 'Netherlands',
-    'NO': 'Norway',      'PL': 'Poland',      'PT': 'Portugal',
-    'SE': 'Sweden',      'SI': 'Slovenia',
+    'AL': 'Albania',        'AT': 'Austria',        'BE': 'Belgium',
+    'BG': 'Bulgaria',       'CH': 'Switzerland',    'CY': 'Cyprus',
+    'CZ': 'Czech Republic', 'DE': 'Germany',        'DK': 'Denmark',
+    'EE': 'Estonia',        'ES': 'Spain',          'FI': 'Finland',
+    'FR': 'France',         'GB': 'United Kingdom', 'GR': 'Greece',
+    'HR': 'Croatia',        'HU': 'Hungary',        'IE': 'Ireland',
+    'IL': 'Israel',         'IS': 'Iceland',        'IT': 'Italy',
+    'LT': 'Lithuania',      'LU': 'Luxembourg',     'LV': 'Latvia',
+    'ME': 'Montenegro',     'MK': 'North Macedonia','NL': 'Netherlands',
+    'NO': 'Norway',         'PL': 'Poland',         'PT': 'Portugal',
+    'RO': 'Romania',        'RS': 'Serbia',         'RU': 'Russia',
+    'SE': 'Sweden',         'SI': 'Slovenia',       'SK': 'Slovakia',
+    'TR': 'Turkey',         'UA': 'Ukraine',        'XK': 'Kosovo',
 }
 
 COUNTRY_FLAGS = {
-    'BE': '🇧🇪', 'CH': '🇨🇭', 'DE': '🇩🇪', 'ES': '🇪🇸',
-    'FI': '🇫🇮', 'FR': '🇫🇷', 'HU': '🇭🇺', 'IE': '🇮🇪',
-    'NL': '🇳🇱', 'NO': '🇳🇴', 'PL': '🇵🇱', 'PT': '🇵🇹',
-    'SE': '🇸🇪', 'SI': '🇸🇮',
+    'AL': '🇦🇱', 'AT': '🇦🇹', 'BE': '🇧🇪', 'BG': '🇧🇬',
+    'CH': '🇨🇭', 'CY': '🇨🇾', 'CZ': '🇨🇿', 'DE': '🇩🇪',
+    'DK': '🇩🇰', 'EE': '🇪🇪', 'ES': '🇪🇸', 'FI': '🇫🇮',
+    'FR': '🇫🇷', 'GB': '🇬🇧', 'GR': '🇬🇷', 'HR': '🇭🇷',
+    'HU': '🇭🇺', 'IE': '🇮🇪', 'IL': '🇮🇱', 'IS': '🇮🇸',
+    'IT': '🇮🇹', 'LT': '🇱🇹', 'LU': '🇱🇺', 'LV': '🇱🇻',
+    'ME': '🇲🇪', 'MK': '🇲🇰', 'NL': '🇳🇱', 'NO': '🇳🇴',
+    'PL': '🇵🇱', 'PT': '🇵🇹', 'RO': '🇷🇴', 'RS': '🇷🇸',
+    'RU': '🇷🇺', 'SE': '🇸🇪', 'SI': '🇸🇮', 'SK': '🇸🇰',
+    'TR': '🇹🇷', 'UA': '🇺🇦', 'XK': '🇽🇰',
 }
 
 # V-Dem country names → ISO-2
@@ -37,18 +51,34 @@ _VDEM_NAME_TO_ISO2 = {v: k for k, v in COUNTRIES.items()}
 
 # Unemployment xlsx ISO-3 → ISO-2
 _UNEMP_ISO3_TO_ISO2 = {
-    'BEL': 'BE', 'CHE': 'CH', 'DEU': 'DE', 'ESP': 'ES',
-    'FIN': 'FI', 'FRA': 'FR', 'HUN': 'HU', 'IRL': 'IE',
-    'NLD': 'NL', 'NOR': 'NO', 'POL': 'PL', 'PRT': 'PT',
-    'SWE': 'SE', 'SVN': 'SI',
+    'ALB': 'AL', 'AUT': 'AT', 'BEL': 'BE', 'BGR': 'BG',
+    'CHE': 'CH', 'CYP': 'CY', 'CZE': 'CZ', 'DEU': 'DE',
+    'DNK': 'DK', 'EST': 'EE', 'ESP': 'ES', 'FIN': 'FI',
+    'FRA': 'FR', 'GBR': 'GB', 'GRC': 'GR', 'HRV': 'HR',
+    'HUN': 'HU', 'IRL': 'IE', 'ISR': 'IL', 'ISL': 'IS',
+    'ITA': 'IT', 'LTU': 'LT', 'LUX': 'LU', 'LVA': 'LV',
+    'MNE': 'ME', 'MKD': 'MK', 'NLD': 'NL', 'NOR': 'NO',
+    'POL': 'PL', 'PRT': 'PT', 'ROU': 'RO', 'SRB': 'RS',
+    'RUS': 'RU', 'SWE': 'SE', 'SVN': 'SI', 'SVK': 'SK',
+    'TUR': 'TR', 'UKR': 'UA', 'XKX': 'XK',
 }
 
 # Gini xlsx country names → ISO-2
 _GINI_NAME_TO_ISO2 = {
-    'Belgium': 'BE', 'Switzerland': 'CH', 'Germany': 'DE', 'Spain': 'ES',
-    'Finland': 'FI', 'France': 'FR', 'Hungary': 'HU', 'Ireland': 'IE',
-    'Netherlands': 'NL', 'Norway': 'NO', 'Poland': 'PL', 'Portugal': 'PT',
-    'Sweden': 'SE', 'Slovenia': 'SI',
+    'Albania': 'AL',        'Austria': 'AT',         'Belgium': 'BE',
+    'Bulgaria': 'BG',       'Switzerland': 'CH',     'Cyprus': 'CY',
+    'Czech Republic': 'CZ', 'Czechia': 'CZ',         'Germany': 'DE',
+    'Denmark': 'DK',        'Estonia': 'EE',         'Spain': 'ES',
+    'Finland': 'FI',        'France': 'FR',          'United Kingdom': 'GB',
+    'Greece': 'GR',         'Croatia': 'HR',         'Hungary': 'HU',
+    'Ireland': 'IE',        'Israel': 'IL',          'Iceland': 'IS',
+    'Italy': 'IT',          'Lithuania': 'LT',       'Luxembourg': 'LU',
+    'Latvia': 'LV',         'Montenegro': 'ME',      'North Macedonia': 'MK',
+    'Netherlands': 'NL',    'Norway': 'NO',          'Poland': 'PL',
+    'Portugal': 'PT',       'Romania': 'RO',         'Serbia': 'RS',
+    'Russia': 'RU',         'Sweden': 'SE',          'Slovenia': 'SI',
+    'Slovak Republic': 'SK','Slovakia': 'SK',         'Turkey': 'TR',
+    'Ukraine': 'UA',        'Kosovo': 'XK',
 }
 
 YEAR_TO_ROUND = {
@@ -106,7 +136,12 @@ MACRO_COLS = [
 _PALETTE = [
     '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-    '#aec7e8', '#ffbb78', '#98df8a', '#ff9896',
+    '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+    '#c49c94', '#f7b6d2', '#c7c7c7', '#dbdb8d', '#9edae5',
+    '#393b79', '#637939', '#8c6d31', '#843c39', '#7b4173',
+    '#bd9e39', '#d6616b', '#ce6dbd', '#6b6ecf', '#b5cf6b',
+    '#e6550d', '#31a354', '#756bb1', '#636363', '#969696',
+    '#6baed6', '#74c476', '#fd8d3c', '#9ecae1', '#a1d99b',
 ]
 COUNTRY_COLORS = {c: _PALETTE[i] for i, c in enumerate(sorted(COUNTRIES.keys()))}
 
@@ -311,6 +346,59 @@ _PVQ_TO_DIM = {
     'iplylfr': 'co', 'ipmodst': 'co', 'ipbhprp': 'co', 'ipfrule': 'co',
     'ipshabt': 'se', 'ipsuces': 'se', 'iprspot': 'se', 'ipstrgv': 'se',
 }
+
+
+# ── ESS Schwartz aggregation from raw CSVs ────────────────────────────────────
+
+_PVQ_ITEMS = [
+    'ipcrtiv', 'ipadvnt', 'ipgdtim', 'iphlppl', 'ipeqopt',
+    'ipudrst', 'iplylfr', 'ipmodst', 'ipbhprp', 'ipfrule',
+    'ipshabt', 'ipsuces', 'iprspot', 'ipstrgv',
+]
+_MIN_RESPONDENTS = 30  # minimum country-round cell size to include
+
+
+def _aggregate_ess_values() -> pd.DataFrame:
+    """Aggregate PVQ-21 item means from raw ESS CSVs for all COUNTRIES."""
+    records = []
+    for r in range(1, 12):
+        csvs = glob.glob(str(ESS_DIR / f'ESS{r}' / '*.csv'))
+        if not csvs:
+            continue
+        year = ROUND_TO_YEAR[r]
+
+        # Discover available columns (casing varies across rounds)
+        header = pd.read_csv(csvs[0], nrows=0)
+        header.columns = header.columns.str.lower()
+        needed = ['cntry'] + _PVQ_ITEMS
+        avail  = [c for c in needed if c in header.columns]
+        missing_pvq = [c for c in _PVQ_ITEMS if c not in header.columns]
+
+        raw = pd.read_csv(csvs[0], usecols=avail, low_memory=False)
+        raw.columns = raw.columns.str.lower()
+        for col in missing_pvq:
+            raw[col] = np.nan
+
+        # Scale 1-6; codes 7/8/9 = missing
+        for col in _PVQ_ITEMS:
+            raw[col] = pd.to_numeric(raw[col], errors='coerce')
+            raw[col] = raw[col].where(raw[col] <= 6)
+
+        for cntry, grp in raw.groupby('cntry'):
+            if cntry not in COUNTRIES:
+                continue
+            row = {'cntry': cntry, 'year': year}
+            for col in _PVQ_ITEMS:
+                vals = grp[col].dropna()
+                if len(vals) >= _MIN_RESPONDENTS:
+                    row[f'{col}_mean']   = float(vals.mean())
+                    row[f'{col}_median'] = float(vals.median())
+                else:
+                    row[f'{col}_mean']   = np.nan
+                    row[f'{col}_median'] = np.nan
+            records.append(row)
+
+    return pd.DataFrame(records)
 
 
 # ── XML helpers (shared by both xlsx files) ────────────────────────────────────
@@ -527,8 +615,8 @@ def load_data() -> pd.DataFrame:
     cached = _load_precomputed('df_main')
     if cached is not None:
         return cached
-    print('[data] Loading ESS aggregated values...')
-    df = pd.read_csv(DATA_PATH)
+    print('[data] Aggregating ESS values from raw CSVs...')
+    df = _aggregate_ess_values()
     df['round']        = df['year'].map(YEAR_TO_ROUND)
     df['country_name'] = df['cntry'].map(COUNTRIES)
 
