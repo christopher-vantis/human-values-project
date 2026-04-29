@@ -427,17 +427,23 @@ def _aggregate_ess_values() -> pd.DataFrame:
             continue
         year = ROUND_TO_YEAR[r]
 
-        # Discover available columns (casing varies across rounds)
+        # Discover available columns; some rounds use 'a'/'b' suffix (e.g. ESS11: ipcrtiva)
         header = pd.read_csv(csvs[0], nrows=0)
         header.columns = header.columns.str.lower()
-        needed = ['cntry'] + _PVQ_ITEMS
-        avail  = [c for c in needed if c in header.columns]
-        missing_pvq = [c for c in _PVQ_ITEMS if c not in header.columns]
+
+        def _norm(c):
+            return c[:-1] if c.startswith('ip') and len(c) > 5 and c[-1] in ('a', 'b') else c
+
+        col_map = {c: _norm(c) for c in header.columns if _norm(c) in _PVQ_ITEMS}
+        avail   = ['cntry'] + list(col_map.keys())
+        avail   = [c for c in avail if c in header.columns]
 
         raw = pd.read_csv(csvs[0], usecols=avail, low_memory=False)
         raw.columns = raw.columns.str.lower()
-        for col in missing_pvq:
-            raw[col] = np.nan
+        raw.rename(columns={k: v for k, v in col_map.items() if k in raw.columns}, inplace=True)
+        for col in _PVQ_ITEMS:
+            if col not in raw.columns:
+                raw[col] = np.nan
 
         # Scale 1-6; codes 7/8/9 = missing
         for col in _PVQ_ITEMS:
