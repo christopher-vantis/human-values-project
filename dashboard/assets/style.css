@@ -208,6 +208,46 @@ body {
   line-height: 1.6;
 }
 
+/* ── Structural indicator rows with hover tooltip ────────────────────────── */
+.indicator-row {
+  position: relative;
+}
+
+.indicator-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 999;
+  width: 300px;
+  background: #1a2840;
+  color: #e8edf5;
+  border-radius: 8px;
+  padding: 11px 14px;
+  box-shadow: 0 6px 18px rgba(13,27,42,0.28);
+  pointer-events: none;
+}
+
+.indicator-row:hover .indicator-tooltip {
+  display: block;
+}
+
+.indicator-tooltip-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #d0d8e8;
+  margin: 0 0 7px;
+}
+
+.indicator-tooltip-source {
+  font-size: 10px;
+  color: #7a90b0;
+  border-top: 1px solid #2e4060;
+  padding-top: 6px;
+  margin: 0;
+  font-style: italic;
+}
+
 .lp-limitation {
   padding: 12px 14px;
   margin-bottom: 10px;

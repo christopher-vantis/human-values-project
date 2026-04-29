@@ -1067,6 +1067,8 @@ def update_t1_info(country):
         )
         yr_str  = f' ({yr})' if yr and not na else ''
 
+        desc = meta.get('desc', '')
+
         return html.Div([
             # Label + value row
             html.Div([
@@ -1076,12 +1078,11 @@ def update_t1_info(country):
                 }),
                 html.Span(
                     f'{val_str} {unit}{yr_str}',
-                    title=src,
                     style={
                         'font-size': '11px', 'font-weight': '700',
                         'color': '#0d1b2a' if not na else '#9aa8b8',
                         'text-align': 'right', 'white-space': 'nowrap',
-                        'cursor': 'help',
+                        'cursor': 'default',
                     },
                 ),
             ], style={'display': 'flex', 'align-items': 'baseline',
@@ -1092,7 +1093,12 @@ def update_t1_info(country):
                 'line-height': '1.4', 'font-style': 'italic',
                 'margin-bottom': '8px',
             }),
-        ])
+            # Hover tooltip card
+            html.Div([
+                html.P(desc, className='indicator-tooltip-desc'),
+                html.P(src,  className='indicator-tooltip-source'),
+            ], className='indicator-tooltip'),
+        ], className='indicator-row')
 
     ind_items = [_ind_item(col) for col in dp.INDICATOR_META]
     ind_block = html.Div([
@@ -1102,7 +1108,7 @@ def update_t1_info(country):
             'margin': '0 0 10px',
         }),
         *ind_items,
-        html.P('Hover over a value for data source. See About for coverage notes.',
+        html.P('Hover over a row to see indicator description and source.',
                style={'font-size': '9.5px', 'color': '#b0bcc8',
                       'margin': '4px 0 0', 'font-style': 'italic'}),
     ], style={
