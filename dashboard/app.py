@@ -305,7 +305,7 @@ landing = html.Div([
                 'Primary source: OECD Income Distribution Database '
                 '(closest-year matching to ESS rounds). '
                 'Supplemented for Ireland (IE) with Eurostat EU-SILC, '
-                'and for all remaining 22 countries with '
+                'and for all remaining 22 countries with ',
                 html.B('World Bank Development Indicators (SI.POV.GINI)'), ', '
                 'which uses Eurostat EU-SILC as the underlying source for EU/EEA members '
                 'and national household surveys for others. '
@@ -316,7 +316,7 @@ landing = html.Div([
                 html.B('Unemployment Rate (% of labour force): '),
                 'Primary source: OECD harmonized unemployment rates '
                 '(supplemented with OECD data for Switzerland). '
-                'For the 22 additional countries not covered by the OECD file: '
+                'For the 22 additional countries not covered by the OECD file: ',
                 html.B('World Bank / ILO modelled estimates (SL.UEM.TOTL.ZS)'), '. '
                 'OECD harmonized and ILO modelled estimates use the same ILO '
                 'definition but differ slightly in methodology.',

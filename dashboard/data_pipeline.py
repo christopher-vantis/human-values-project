@@ -149,6 +149,52 @@ BG_COLOR    = '#f4f6fb'
 RADAR_BG    = '#e8edf5'
 DELTA_RANGE = [-1.4, 1.75]
 
+# ── Country profile info ───────────────────────────────────────────────────────
+# (capital, population_millions, area_km2, political_system, eu_status)
+# Population and area: approximate 2023 figures.
+# EU status: year of accession, 'EEA', or 'No'.
+COUNTRY_INFO = {
+    'AL': ('Tirana',        2.8,    28748,   'Parliamentary Republic',              'Candidate'),
+    'AT': ('Vienna',        9.1,    83871,   'Federal Parliamentary Republic',       'EU 1995'),
+    'BE': ('Brussels',     11.6,    30528,   'Federal Constitutional Monarchy',      'EU 1952'),
+    'BG': ('Sofia',         6.5,   110879,   'Parliamentary Republic',              'EU 2007'),
+    'CH': ('Bern',          8.7,    41285,   'Federal Council / Direct Democracy',  'EEA'),
+    'CY': ('Nicosia',       1.2,     9251,   'Presidential Republic',               'EU 2004'),
+    'CZ': ('Prague',       10.9,    78866,   'Parliamentary Republic',              'EU 2004'),
+    'DE': ('Berlin',       84.4,   357114,   'Federal Parliamentary Republic',       'EU 1952'),
+    'DK': ('Copenhagen',    5.9,    42924,   'Constitutional Monarchy',             'EU 1973'),
+    'EE': ('Tallinn',       1.4,    45228,   'Parliamentary Republic',              'EU 2004'),
+    'ES': ('Madrid',       47.4,   505990,   'Constitutional Monarchy',             'EU 1986'),
+    'FI': ('Helsinki',      5.5,   338145,   'Parliamentary Republic',              'EU 1995'),
+    'FR': ('Paris',        68.0,   551695,   'Semi-Presidential Republic',          'EU 1952'),
+    'GB': ('London',       67.6,   243610,   'Constitutional Monarchy',             'Left EU 2020'),
+    'GR': ('Athens',       10.7,   131957,   'Parliamentary Republic',              'EU 1981'),
+    'HR': ('Zagreb',        3.9,    56594,   'Parliamentary Republic',              'EU 2013'),
+    'HU': ('Budapest',      9.7,    93028,   'Parliamentary Republic',              'EU 2004'),
+    'IE': ('Dublin',        5.1,    70273,   'Parliamentary Republic',              'EU 1973'),
+    'IL': ('Jerusalem',     9.5,    20770,   'Parliamentary Republic',              'No'),
+    'IS': ('Reykjavik',     0.4,   103000,   'Parliamentary Republic',              'EEA'),
+    'IT': ('Rome',         59.1,   301340,   'Parliamentary Republic',              'EU 1952'),
+    'LT': ('Vilnius',       2.8,    65300,   'Parliamentary Republic',              'EU 2004'),
+    'LU': ('Luxembourg',    0.7,     2586,   'Constitutional Monarchy (Grand Duchy)', 'EU 1952'),
+    'LV': ('Riga',          1.8,    64589,   'Parliamentary Republic',              'EU 2004'),
+    'ME': ('Podgorica',     0.6,    13812,   'Parliamentary Republic',              'Candidate'),
+    'MK': ('Skopje',        2.1,    25713,   'Parliamentary Republic',              'Candidate'),
+    'NL': ('Amsterdam',    17.8,    41543,   'Constitutional Monarchy',             'EU 1952'),
+    'NO': ('Oslo',          5.5,   385207,   'Constitutional Monarchy',             'EEA'),
+    'PL': ('Warsaw',       38.0,   312696,   'Parliamentary Republic',              'EU 2004'),
+    'PT': ('Lisbon',       10.3,    92212,   'Semi-Presidential Republic',          'EU 1986'),
+    'RO': ('Bucharest',    19.0,   238397,   'Semi-Presidential Republic',          'EU 2007'),
+    'RS': ('Belgrade',      6.8,    77474,   'Parliamentary Republic',              'Candidate'),
+    'RU': ('Moscow',      146.0, 17098242,   'Federal Semi-Presidential Republic',  'No'),
+    'SE': ('Stockholm',    10.5,   450295,   'Constitutional Monarchy',             'EU 1995'),
+    'SI': ('Ljubljana',     2.1,    20273,   'Parliamentary Republic',              'EU 2004'),
+    'SK': ('Bratislava',    5.5,    49035,   'Parliamentary Republic',              'EU 2004'),
+    'TR': ('Ankara',       85.3,   783356,   'Presidential Republic',               'Candidate (frozen)'),
+    'UA': ('Kyiv',         43.5,   603550,   'Semi-Presidential Republic',          'Candidate'),
+    'XK': ('Pristina',      1.8,    10887,   'Parliamentary Republic',              'No'),
+}
+
 # ── Scatter / Correlation analysis ────────────────────────────────────────────
 
 SCATTER_PATH = (
