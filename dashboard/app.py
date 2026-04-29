@@ -330,11 +330,11 @@ landing = html.Div([
 
         # ── Government expenditure ──
         html.P([html.B('Government expenditure (COFOG classification)'),
-                ' - Eurostat Government Finance Statistics, % of total government spending:'],
+                ' - Eurostat Government Finance Statistics, total general government expenditure as % of GDP:'],
                className='lp-p', style={'margin-bottom': '4px'}),
         html.Ul([
-            html.Li('GF07 Health · GF09 Education · GF10 Social Protection · '
-                    'GF02 Defence · GF04 Economic Affairs.',
+            html.Li('GF01 General Public Services · GF02 Defence · GF04 Economic Affairs · '
+                    'GF07 Health · GF08 Culture & Recreation · GF09 Education · GF10 Social Protection.',
                     className='lp-li'),
         ], className='lp-ul'),
     ], className='lp-section'),
@@ -373,7 +373,7 @@ landing = html.Div([
                 'Scatter plots of country-level predictors (ESS social variables, '
                 'external macro indicators, COFOG government expenditure) against '
                 'the four Schwartz higher-order dimensions. Unit of analysis: '
-                'country means across all ESS rounds (N = 14). Each point is one '
+                'country means across all ESS rounds (N up to 39). Each point is one '
                 'country. The regression line shows the OLS fit; the shaded band '
                 'is the 95 % parametric confidence interval. '
                 'Select "All 4 Dimensions" to see a 2×2 overview grid, or pick '
@@ -413,7 +413,7 @@ landing = html.Div([
                 'Benevolence/Universalism and a negative one for Stimulation, that reflects a '
                 'universal regularity - not a country-specific finding. ',
                 html.B('What is informative are the deviations of individual countries from the '
-                       '14-country average.'),
+                       'cross-national average.'),
             ], className='lp-p', style={'margin-top': '4px'}),
         ], className='lp-limitation'),
 
@@ -573,8 +573,10 @@ _SCATTER_X_OPTS = [
     {'label': 'Gov. Health Exp.',         'value': 'gov_exp_health'},
     {'label': 'Gov. Education Exp.',      'value': 'gov_exp_education'},
     {'label': 'Gov. Social Exp.',         'value': 'gov_exp_social'},
-    {'label': 'Gov. Defence Exp.',        'value': 'gov_exp_defence'},
-    {'label': 'Gov. Economic Exp.',       'value': 'gov_exp_economic'},
+    {'label': 'Gov. Defence Exp.',            'value': 'gov_exp_defence'},
+    {'label': 'Gov. Economic Exp.',           'value': 'gov_exp_economic'},
+    {'label': 'Gov. Public Services Exp.',    'value': 'gov_exp_public_services'},
+    {'label': 'Gov. Culture & Recreation Exp.', 'value': 'gov_exp_culture'},
 ]
 
 _SCATTER_Y_OPTS = [
@@ -596,7 +598,7 @@ tab_corr = html.Div([
         html.Div([
             _subtitle(
                 'Pearson correlations between country-level predictors and '
-                'Schwartz value dimensions. N varies per round (up to 30+ countries). '
+                'Schwartz value dimensions. N varies per round (up to 39 countries). '
                 'Regression line with 95 % CI band.'
             ),
             _ctrl_label('ESS Round'),

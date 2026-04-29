@@ -236,11 +236,13 @@ SCATTER_X_META = [
     ('wb_gini',               'Gini Index',              'World Bank GINI index (0-100)'),
     ('wb_unemployment',       'Unemployment (%)',        'World Bank unemployment rate (% of labour force)'),
     ('wb_gdp_per_capita_ppp', 'GDP per Capita (PPP)',    'World Bank GDP/cap, PPP, constant 2017 int\'l $'),
-    ('gov_exp_health',        'Gov. Health Exp.',        'COFOG: health (% of total gov. spending)'),
-    ('gov_exp_education',     'Gov. Education Exp.',     'COFOG: education (% of total gov. spending)'),
-    ('gov_exp_social',        'Gov. Social Exp.',        'COFOG: social protection (% of total gov. spending)'),
-    ('gov_exp_defence',       'Gov. Defence Exp.',       'COFOG: defence (% of total gov. spending)'),
-    ('gov_exp_economic',      'Gov. Economic Exp.',      'COFOG: economic affairs (% of total gov. spending)'),
+    ('gov_exp_health',           'Gov. Health Exp.',            'COFOG: health (% of total gov. spending)'),
+    ('gov_exp_education',        'Gov. Education Exp.',         'COFOG: education (% of total gov. spending)'),
+    ('gov_exp_social',           'Gov. Social Exp.',            'COFOG: social protection (% of total gov. spending)'),
+    ('gov_exp_defence',          'Gov. Defence Exp.',           'COFOG: defence (% of total gov. spending)'),
+    ('gov_exp_economic',         'Gov. Economic Exp.',          'COFOG: economic affairs (% of total gov. spending)'),
+    ('gov_exp_public_services',  'Gov. Public Services Exp.',   'COFOG: general public services (% of total gov. spending)'),
+    ('gov_exp_culture',          'Gov. Culture & Recreation Exp.', 'COFOG: recreation, culture and religion (% of total gov. spending)'),
 ]
 
 # Rich display metadata for the sidebar (source, question wording, scale, aggregation)
@@ -345,7 +347,19 @@ SCATTER_X_DETAIL = {
     'gov_exp_economic': {
         'source':      'Eurostat Government Finance Statistics (COFOG classification)',
         'variable':    'GF04 - Economic affairs (function 04 of total government expenditure)',
-        'scale':       '% of total government expenditure',
+        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
+        'aggregation': 'Country mean over ESS reference years',
+    },
+    'gov_exp_public_services': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF01 - General public services (function 01 of total government expenditure)',
+        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
+        'aggregation': 'Country mean over ESS reference years',
+    },
+    'gov_exp_culture': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF08 - Recreation, culture and religion (function 08 of total government expenditure)',
+        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
         'aggregation': 'Country mean over ESS reference years',
     },
 }
@@ -875,7 +889,7 @@ def load_scatter_data() -> pd.DataFrame:
     """Load macro_schwartz_analysis_data, compute Schwartz delta dim scores.
 
     Checks precomputed/df_scatter.csv first (server mode).
-    Returns a 150-row DataFrame (14 countries × 11 ESS rounds) with all
+    Returns a DataFrame (up to 39 countries × 11 ESS rounds, ~248 rows) with all
     predictor and Schwartz dimension columns, plus 'ess_round' and
     'country_name'. Real data patches for wb_gini are applied from
     _GINI_PATCHES (World Bank / Eurostat, fetched 2026-04-28).
