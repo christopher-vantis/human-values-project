@@ -1058,21 +1058,21 @@ def load_micro_individual(sample_per_dim: int = 300, seed: int = 42) -> pd.DataF
 # ── Sociological indicator metadata and loader ────────────────────────────────
 
 INDICATOR_META: dict[str, dict] = {
-    'ess_trust_pct': {
+    'ess_trust_mean': {
         'label':   'Social Trust',
-        'unit':    '% scoring 6-10',
-        'desc':    'Share of ESS respondents scoring 6-10 on "Most people can be trusted or you can\'t be too careful" (ppltrst, 0-10). Weighted with pspwght.',
+        'unit':    'mean 0-10',
+        'desc':    'Country mean on "Most people can be trusted or you can\'t be too careful" (ESS variable ppltrst, 0-10, where 10 = most people can be trusted). Most recent ESS round available per country.',
         'source':  'European Social Survey (ESS), most recent available round per country',
         'url':     'https://ess.nsd.no',
-        'range':   (5, 85),
+        'range':   (1.5, 8.5),
     },
-    'ess_religiosity_pct': {
+    'ess_religiosity_mean': {
         'label':   'Religiosity',
-        'unit':    '% scoring 6-10',
-        'desc':    'Share of ESS respondents scoring 6-10 on "How religious are you?" (rlgdgr, 0-10). Weighted with pspwght.',
+        'unit':    'mean 0-10',
+        'desc':    'Country mean on "How religious are you?" (ESS variable rlgdgr, 0 = not religious at all, 10 = very religious). Most recent ESS round available per country.',
         'source':  'European Social Survey (ESS), most recent available round per country',
         'url':     'https://ess.nsd.no',
-        'range':   (10, 80),
+        'range':   (1.0, 9.0),
     },
     'estat_gini': {
         'label':   'Gini Index',

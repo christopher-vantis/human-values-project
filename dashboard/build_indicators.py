@@ -130,12 +130,16 @@ _ESTAT_CODE_REMAP: dict[str, str] = {
 }
 
 
+_ESTAT_MAX_YEAR = 2023   # cap at last fully published year; 2024/2025 are provisional
+
+
 def _latest_per_country(melted: pd.DataFrame, geo_col: str,
                         val_col: str, countries: list[str],
                         decimals: int = 1) -> tuple[pd.Series, pd.Series]:
-    # Remap Eurostat non-ISO codes before matching
+    # Remap Eurostat non-ISO codes and cap at final published year
     melted = melted.copy()
     melted[geo_col] = melted[geo_col].replace(_ESTAT_CODE_REMAP)
+    melted = melted[melted["year"] <= _ESTAT_MAX_YEAR]
     records: dict[str, tuple[float,int]] = {}
     for c in countries:
         sub = melted[melted[geo_col] == c].sort_values("year", ascending=False)
@@ -168,37 +172,34 @@ def _validate(values: pd.Series, lo: float, hi: float,
         log.info("[%s]  ref years: %s", col, yrs)
 
 
-# ── 1 & 2: ESS Social Trust and Religiosity (% scoring 6–10) ─────────────────
+# ── 1 & 2: ESS Social Trust and Religiosity (weighted mean, most recent round) ─
+# Using the mean (0-10) rather than a % threshold: more informative, consistent
+# with the Correlations tab, and avoids an arbitrary cut-off at 6.
 
-def build_ess_pct(ess_var: str, col_out: str) -> tuple[pd.Series, pd.Series]:
-    """Use all ESS rounds; pick most recent for each country."""
-    log.info("=== %s from ESS (most recent round per country) ===", col_out)
-    records: dict[str, tuple[float, int]] = {}
-    for r in range(11, 0, -1):
-        csvs = list(ESS_DIR.glob(f"ESS{r}/*.csv"))
-        if not csvs:
-            continue
-        year = ROUND_TO_YEAR[r]
-        try:
-            df = pd.read_csv(csvs[0], usecols=["cntry", ess_var, "pspwght"],
-                             low_memory=False)
-        except ValueError:
-            df = pd.read_csv(csvs[0], usecols=["cntry", ess_var], low_memory=False)
-            df["pspwght"] = 1.0
-        df[ess_var]   = pd.to_numeric(df[ess_var], errors="coerce")
-        df["pspwght"] = pd.to_numeric(df["pspwght"], errors="coerce")
-        df = df[df[ess_var].between(0, 10)]
-        for cntry, grp in df.groupby("cntry"):
-            if cntry not in COUNTRIES or cntry in records:
-                continue
-            w   = grp["pspwght"].fillna(1.0)
-            pct = (grp[ess_var].ge(6) * w).sum() / w.sum() * 100
-            records[cntry] = (round(float(pct), 1), year)
-    values = pd.Series({k: v[0] for k,v in records.items()},
-                       name=col_out).reindex(COUNTRIES)
-    years  = pd.Series({k: v[1] for k,v in records.items()},
-                       name=col_out+"_year").reindex(COUNTRIES)
-    _validate(values, 5, 90, years)
+def build_ess_mean(scatter_col: str, col_out: str,
+                   val_range: tuple[float,float]) -> tuple[pd.Series, pd.Series]:
+    """Read from df_scatter (all 39 countries, most recent ESS round each)."""
+    log.info("=== %s from df_scatter (most recent round per country) ===", col_out)
+    cache = PRECOMP / "df_scatter.csv"
+    if not cache.exists():
+        log.error("[%s]  df_scatter.csv not found", col_out)
+        return _empty(col_out), _empty(col_out + "_year")
+    df = pd.read_csv(cache)
+    if scatter_col not in df.columns:
+        log.error("[%s]  column %s not in df_scatter", col_out, scatter_col)
+        return _empty(col_out), _empty(col_out + "_year")
+    df = df[["cntry", "year", scatter_col]].dropna()
+    df = df.sort_values("year", ascending=False)
+    latest = df.groupby("cntry").first().reset_index()
+    values = pd.Series(
+        latest.set_index("cntry")[scatter_col].round(2).to_dict(),
+        name=col_out,
+    ).reindex(COUNTRIES)
+    years = pd.Series(
+        latest.set_index("cntry")["year"].to_dict(),
+        name=col_out + "_year",
+    ).reindex(COUNTRIES)
+    _validate(values, val_range[0], val_range[1], years)
     return values, years
 
 
@@ -546,8 +547,8 @@ def main() -> None:
     log.info("Building country indicators — %s", RETRIEVAL_DATE)
     parts: list[pd.Series] = []
 
-    v, y = build_ess_pct("ppltrst", "ess_trust_pct");         parts += [v, y]
-    v, y = build_ess_pct("rlgdgr",  "ess_religiosity_pct");   parts += [v, y]
+    v, y = build_ess_mean("trust_mean", "ess_trust_mean", (1.5, 8.5));      parts += [v, y]
+    v, y = build_ess_mean("religiosity_mean", "ess_religiosity_mean", (1.0, 9.0)); parts += [v, y]
     v, y = build_estat_gini();        parts += [v, y]
     v, y = build_estat_gdp_pps();     parts += [v, y]
     v, y = build_estat_tertiary();    parts += [v, y]
