@@ -16,6 +16,7 @@ from figures.scatter     import make_scatter_single, make_scatter_all
 DF          = dp.load_data()
 DF_MICRO    = dp.load_micro_individual(sample_per_dim=300)
 DF_SCATTER  = dp.load_scatter_data()
+DF_IND, INDICATOR_SENTENCES = dp.load_indicators()
 ALL_YEARS      = dp.ALL_YEARS
 COUNTRIES      = dp.COUNTRIES
 DIM_COLORS     = dp.DIM_COLORS
@@ -384,6 +385,68 @@ landing = html.Div([
                     'GF07 Health · GF08 Culture & Recreation · GF09 Education · GF10 Social Protection.',
                     className='lp-li'),
         ], className='lp-ul'),
+    ], className='lp-section'),
+
+    html.Hr(className='lp-hr'),
+
+    html.Div([
+        html.H2('Missing Data in Structural Indicators', className='lp-h2'),
+
+        html.P([
+            'The 12 structural indicators shown in the Country Profile tab are drawn '
+            'from multiple sources with different country coverage. '
+            'Missing values (shown as "n/a") are never imputed - the reason is always '
+            'documented. The main gaps are:',
+        ], className='lp-p'),
+
+        html.Ul([
+            html.Li([
+                html.B('EIGE Gender Equality Index (26/39 countries): '),
+                'Covers EU27 member states only. Countries outside EIGE scope: '
+                'Albania, Switzerland, United Kingdom (Brexit 2020), Israel, Iceland, '
+                'Montenegro, North Macedonia, Norway, Serbia, Russia, Turkiye, Ukraine, Kosovo.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('OECD Trade Union Density (28/39 countries): '),
+                'Coverage limited to OECD member and partner countries in the TUD dataset. '
+                'Missing: Albania, Bulgaria, Cyprus, Croatia, Montenegro, North Macedonia, '
+                'Romania, Serbia, Russia, Ukraine, Kosovo.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('Eurostat Healthy Life Years (30/39 countries): '),
+                'Eurostat hlth_hlye covers EU and EEA members. '
+                'Missing: Albania, Israel, Montenegro, North Macedonia, Serbia, Russia, '
+                'Turkiye, Ukraine, Kosovo.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('Eurostat Tertiary Attainment (34/39 countries): '),
+                'Missing: Albania, Israel, Russia, Ukraine, Kosovo - not covered by Eurostat edat_lfse_03.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('Eurostat GDP per Capita PPS (35/39 countries): '),
+                'Missing: Israel, Russia, Ukraine, Kosovo - not included in the Eurostat PPS reference framework.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('Eurostat Gini (36/39 countries): '),
+                'Israel: not covered by Eurostat EU-SILC. '
+                'Russia: no Eurostat coverage. '
+                'Ukraine: World Bank Gini data available only through 2020; no recent estimate.',
+            ], className='lp-li', style={'margin-bottom': '8px'}),
+            html.Li([
+                html.B('Kosovo (XK) across multiple indicators: '),
+                'As a non-UN-member territory, Kosovo is excluded from several '
+                'international datasets (TI CPI, World Happiness Report, World Bank '
+                'migrant stock, OECD, EIGE, Eurostat for several indicators).',
+            ], className='lp-li'),
+        ], className='lp-ul'),
+
+        html.P([
+            'ESS-derived indicators (Social Trust %, Religiosity %) and V-Dem Liberal '
+            'Democracy Index achieve full 39/39 coverage. '
+            'For ESS indicators, the most recent ESS round in which the country participated '
+            'is used (varying from round 2 in 2004 for Luxembourg to round 11 in 2023 '
+            'for most countries).',
+        ], className='lp-p'),
     ], className='lp-section'),
 
     html.Hr(className='lp-hr'),
@@ -978,7 +1041,8 @@ def update_t1_info(country):
             'padding': '0 16px 0 0',
         })
 
-    return html.Div([
+    # ── basic facts card ──────────────────────────────────────────────────────
+    facts_card = html.Div([
         html.Div([
             _stat('Capital',     capital),
             _stat('Population',  f'{pop_m:.1f} M'),
@@ -986,11 +1050,7 @@ def update_t1_info(country):
             _stat('System',      system),
             _stat('EU status',   eu),
             _stat('ESS rounds',  f'R{rounds_str}  ({len(rounds_avail)} of 11)'),
-        ], style={
-            'display': 'flex',
-            'flex-wrap': 'wrap',
-            'gap': '12px 0',
-        }),
+        ], style={'display': 'flex', 'flex-wrap': 'wrap', 'gap': '12px 0'}),
     ], style={
         'margin-top': '14px',
         'padding': '14px 18px',
@@ -998,6 +1058,82 @@ def update_t1_info(country):
         'border-radius': '8px',
         'border-top': '3px solid #c0cce0',
     })
+
+    # ── structural indicator block ────────────────────────────────────────────
+    ind_row = DF_IND.loc[country] if country in DF_IND.index else None
+    sents   = INDICATOR_SENTENCES.get(country, {})
+
+    def _ind_item(col: str) -> html.Div:
+        meta  = dp.INDICATOR_META[col]
+        label = meta['label']
+        unit  = meta['unit']
+        src   = meta['source']
+        sentence = sents.get(col, '')
+
+        if ind_row is not None:
+            import pandas as _pd
+            v    = ind_row.get(col)
+            yr_v = ind_row.get(col + '_year')
+            yr   = int(yr_v) if yr_v and not _pd.isna(yr_v) else None
+        else:
+            v, yr = None, None
+
+        na = v is None or (hasattr(v, '__float__') and __import__('math').isnan(float(v)))
+
+        val_str = 'n/a' if na else (
+            f'{v:.3f}' if col == 'vdem_ldi' else
+            f'{v:.0f}' if col == 'estat_gdp_pps' else
+            f'{v:.1f}'
+        )
+        yr_str  = f' ({yr})' if yr and not na else ''
+
+        return html.Div([
+            # Label + value row
+            html.Div([
+                html.Span(label, style={
+                    'font-size': '11px', 'font-weight': '600',
+                    'color': '#3a4a60', 'flex': '1',
+                }),
+                html.Span(
+                    f'{val_str} {unit}{yr_str}',
+                    title=src,
+                    style={
+                        'font-size': '11px', 'font-weight': '700',
+                        'color': '#0d1b2a' if not na else '#9aa8b8',
+                        'text-align': 'right', 'white-space': 'nowrap',
+                        'cursor': 'help',
+                    },
+                ),
+            ], style={'display': 'flex', 'align-items': 'baseline',
+                      'gap': '8px', 'margin-bottom': '2px'}),
+            # Contextual sentence
+            html.Div(sentence, style={
+                'font-size': '10.5px', 'color': '#7a90b0',
+                'line-height': '1.4', 'font-style': 'italic',
+                'margin-bottom': '8px',
+            }),
+        ])
+
+    ind_items = [_ind_item(col) for col in dp.INDICATOR_META]
+    ind_block = html.Div([
+        html.P('Structural Indicators', style={
+            'font-size': '10px', 'font-weight': '700', 'color': '#1a2840',
+            'text-transform': 'uppercase', 'letter-spacing': '0.5px',
+            'margin': '0 0 10px',
+        }),
+        *ind_items,
+        html.P('Hover over a value for data source. See About for coverage notes.',
+               style={'font-size': '9.5px', 'color': '#b0bcc8',
+                      'margin': '4px 0 0', 'font-style': 'italic'}),
+    ], style={
+        'margin-top': '14px',
+        'padding': '14px 18px',
+        'background-color': '#f7f9fc',
+        'border-radius': '8px',
+        'border-top': '3px solid #c0cce0',
+    })
+
+    return html.Div([facts_card, ind_block])
 
 
 # Tab Corr - Correlations

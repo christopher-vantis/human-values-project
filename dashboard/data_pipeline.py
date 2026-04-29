@@ -1049,6 +1049,127 @@ def load_micro_individual(sample_per_dim: int = 300, seed: int = 42) -> pd.DataF
     return result[keep]
 
 
+# ── Sociological indicator metadata and loader ────────────────────────────────
+
+INDICATOR_META: dict[str, dict] = {
+    'ess_trust_pct': {
+        'label':   'Social Trust',
+        'unit':    '% scoring 6-10',
+        'desc':    'Share of ESS respondents scoring 6-10 on "Most people can be trusted or you can\'t be too careful" (ppltrst, 0-10). Weighted with pspwght.',
+        'source':  'European Social Survey (ESS), most recent available round per country',
+        'url':     'https://ess.nsd.no',
+        'range':   (5, 85),
+    },
+    'ess_religiosity_pct': {
+        'label':   'Religiosity',
+        'unit':    '% scoring 6-10',
+        'desc':    'Share of ESS respondents scoring 6-10 on "How religious are you?" (rlgdgr, 0-10). Weighted with pspwght.',
+        'source':  'European Social Survey (ESS), most recent available round per country',
+        'url':     'https://ess.nsd.no',
+        'range':   (10, 80),
+    },
+    'estat_gini': {
+        'label':   'Gini Index',
+        'unit':    '0-100',
+        'desc':    'Gini coefficient of equivalised disposable income. 0 = perfect equality, 100 = maximum inequality.',
+        'source':  'Eurostat EU-SILC (ilc_di12); Ireland supplemented from Eurostat SILC',
+        'url':     'https://ec.europa.eu/eurostat/databrowser/view/ilc_di12',
+        'range':   (20, 50),
+    },
+    'estat_gdp_pps': {
+        'label':   'GDP per Capita (PPS)',
+        'unit':    'EU27 = 100',
+        'desc':    'GDP per capita in Purchasing Power Standards, indexed to EU27 average = 100.',
+        'source':  'Eurostat (tec00114)',
+        'url':     'https://ec.europa.eu/eurostat/databrowser/view/tec00114',
+        'range':   (20, 300),
+    },
+    'estat_tertiary_pct': {
+        'label':   'Tertiary Attainment 25-34',
+        'unit':    '%',
+        'desc':    'Share of 25-34 year-olds with a tertiary qualification (ISCED 5-8).',
+        'source':  'Eurostat (edat_lfse_03)',
+        'url':     'https://ec.europa.eu/eurostat/databrowser/view/edat_lfse_03',
+        'range':   (15, 80),
+    },
+    'estat_hly': {
+        'label':   'Healthy Life Years',
+        'unit':    'years at birth',
+        'desc':    'Expected years lived in good health at birth (Sullivan method, self-assessed disability).',
+        'source':  'Eurostat (hlth_hlye)',
+        'url':     'https://ec.europa.eu/eurostat/databrowser/view/hlth_hlye',
+        'range':   (50, 80),
+    },
+    'eige_gei': {
+        'label':   'Gender Equality Index',
+        'unit':    '0-100',
+        'desc':    'EIGE composite index across work, money, knowledge, time, power, health (100 = full equality). EU27 only.',
+        'source':  'European Institute for Gender Equality (EIGE), 2023 edition (data year 2021)',
+        'url':     'https://eige.europa.eu/gender-equality-index/2023',
+        'range':   (45, 90),
+    },
+    'ti_cpi': {
+        'label':   'Corruption Perceptions Index',
+        'unit':    '0-100',
+        'desc':    'Perceived corruption in the public sector. 0 = highly corrupt, 100 = very clean.',
+        'source':  'Transparency International CPI 2024 (via Our World in Data)',
+        'url':     'https://www.transparency.org/en/cpi',
+        'range':   (20, 100),
+    },
+    'vdem_ldi': {
+        'label':   'Liberal Democracy Index',
+        'unit':    '0-1',
+        'desc':    'V-Dem Liberal Democracy Index: electoral democracy + rule of law + civil liberties + executive constraints.',
+        'source':  'V-Dem Institute, Country-Year dataset v15 (v2x_libdem)',
+        'url':     'https://www.v-dem.net',
+        'range':   (0, 1),
+    },
+    'whr_ladder': {
+        'label':   'Life Satisfaction',
+        'unit':    '0-10 (Cantril ladder)',
+        'desc':    'National average self-reported life satisfaction on the Cantril ladder (0 = worst, 10 = best possible life).',
+        'source':  'World Happiness Report, 3-year average (via Our World in Data)',
+        'url':     'https://worldhappiness.report',
+        'range':   (3.5, 8.5),
+    },
+    'estat_foreign_born_pct': {
+        'label':   'Foreign-born Share',
+        'unit':    '% of population',
+        'desc':    'International migrant stock as a share of total population.',
+        'source':  'World Bank Development Indicators (SM.POP.TOTL.ZS)',
+        'url':     'https://data.worldbank.org/indicator/SM.POP.TOTL.ZS',
+        'range':   (0, 60),
+    },
+    'oecd_union_density': {
+        'label':   'Trade Union Density',
+        'unit':    '% of wage earners',
+        'desc':    'Share of wage and salary earners who are trade union members.',
+        'source':  'OECD Trade Union Dataset (DSD_TUD_CBC@DF_TUD)',
+        'url':     'https://stats.oecd.org/index.aspx?DataSetCode=TUD',
+        'range':   (2, 95),
+    },
+}
+
+_INDICATORS_PATH = Path(__file__).parent / 'precomputed' / 'df_indicators.csv'
+_SENTENCES_PATH  = Path(__file__).parent / 'precomputed' / 'indicator_sentences.json'
+
+
+def load_indicators() -> tuple[pd.DataFrame, dict]:
+    """Load per-country indicator values and contextualising sentences.
+
+    Returns (df_indicators, sentences) where:
+      df_indicators: DataFrame indexed by cntry with value + year columns
+      sentences:     {cntry: {col: sentence_str}}
+    """
+    import json
+    df = pd.read_csv(_INDICATORS_PATH).set_index('cntry') \
+        if _INDICATORS_PATH.exists() else pd.DataFrame()
+    sentences: dict = {}
+    if _SENTENCES_PATH.exists():
+        sentences = json.loads(_SENTENCES_PATH.read_text())
+    return df, sentences
+
+
 def hex_to_rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip('#')
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
