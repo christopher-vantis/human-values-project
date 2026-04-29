@@ -55,7 +55,7 @@ def make_parallel(df: pd.DataFrame, year: int, countries: list) -> go.Figure:
                                font=dict(size=13, color='#5a6a80'),
                                xref='paper', yref='paper')
         fig.update_layout(paper_bgcolor=BG_COLOR, height=820,
-                          margin=dict(t=140, b=60, l=110, r=110))
+                          margin=dict(t=20, b=60, l=110, r=110))
         return fig
 
     if not countries:
@@ -110,7 +110,7 @@ def make_parallel(df: pd.DataFrame, year: int, countries: list) -> go.Figure:
         paper_bgcolor=BG_COLOR,
         plot_bgcolor=BG_COLOR,
         height=820,
-        margin=dict(t=140, b=60, l=110, r=110),
+        margin=dict(t=20, b=60, l=110, r=110),
     )
     return fig
 
@@ -128,7 +128,7 @@ def make_parallel_micro(df: pd.DataFrame, highlight_dim: str) -> go.Figure:
                                font=dict(size=13, color='#5a6a80'),
                                xref='paper', yref='paper')
         fig.update_layout(paper_bgcolor=BG_COLOR, height=520,
-                          margin=dict(t=90, b=70, l=60, r=40))
+                          margin=dict(t=10, b=70, l=60, r=40))
         return fig
 
     if df is None or df.empty:
@@ -218,22 +218,25 @@ def make_parallel_micro(df: pd.DataFrame, highlight_dim: str) -> go.Figure:
             line=dict(color='#c8d4e0', width=1),
             layer='below',
         )
+        # Axis name — just above the top of the axis bar
         fig.add_annotation(
-            x=i, xref='x', y=1.25, yref='y',
+            x=i, xref='x', y=1.08, yref='y',
             text=label.replace('\n', '<br>'),
             showarrow=False, align='center',
             font=dict(size=9.5, color='#1a2840', family='sans-serif'),
             xanchor='center', yanchor='bottom',
         )
+        # Max scale value — just below the axis name
         fig.add_annotation(
-            x=i, xref='x', y=1.03, yref='y',
+            x=i, xref='x', y=1.01, yref='y',
             text=str(rng_hi),
             showarrow=False,
             font=dict(size=8, color='#9aa8b8'),
             xanchor='center', yanchor='bottom',
         )
+        # Min scale value — just below the axis bar
         fig.add_annotation(
-            x=i, xref='x', y=-0.04, yref='y',
+            x=i, xref='x', y=-0.02, yref='y',
             text=str(rng_lo),
             showarrow=False,
             font=dict(size=8, color='#9aa8b8'),
@@ -244,13 +247,13 @@ def make_parallel_micro(df: pd.DataFrame, highlight_dim: str) -> go.Figure:
         paper_bgcolor=BG_COLOR,
         plot_bgcolor=BG_COLOR,
         height=560,
-        margin=dict(t=60, b=80, l=50, r=30),
+        margin=dict(t=10, b=80, l=50, r=30),
         xaxis=dict(
             range=[-0.5, n_axes - 0.5],
             showgrid=False, showticklabels=False, zeroline=False,
         ),
         yaxis=dict(
-            range=[-0.10, 1.55],
+            range=[-0.10, 1.22],
             showgrid=False, showticklabels=False, zeroline=False,
         ),
         showlegend=True,
