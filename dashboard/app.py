@@ -123,7 +123,7 @@ def _method_panel(btn_id: str, content_id: str, rows: list):
         }))
     return html.Div([
         html.Button(
-            '? Methodology',
+            'Info',
             id=btn_id,
             n_clicks=0,
             style={
@@ -496,26 +496,6 @@ landing = html.Div([
             ], className='lp-p', style={'margin-top': '4px'}),
         ], className='lp-limitation'),
 
-    ], className='lp-section'),
-
-    html.Hr(className='lp-hr'),
-
-    html.Div([
-        html.P([
-            'Each tab includes a dedicated ',
-            html.B('? Methodology'),
-            ' panel in the sidebar. Click it to read about the analytical approach, '
-            'units of analysis, and visualisation conventions specific to that view.',
-        ], style={
-            'font-size': '12px',
-            'color': '#3a4a60',
-            'background-color': '#edf1f8',
-            'border-left': '3px solid #1a5fb4',
-            'border-radius': '6px',
-            'padding': '10px 14px',
-            'margin': '0',
-            'line-height': '1.6',
-        }),
     ], className='lp-section'),
 
 ], className='landing-page')
@@ -1214,7 +1194,7 @@ def update_t3(highlight_dim):
 def _toggle(n):
     open_ = bool(n and n % 2 == 1)
     return _METHOD_OPEN if open_ else {'display': 'none'}, \
-           '▲ Methodology' if open_ else '? Methodology'
+           '▲ Info' if open_ else 'Info'
 
 
 @app.callback(
