@@ -76,8 +76,27 @@ with zipfile.ZipFile(xlsx_file, 'r') as z:
                         results[(key, country, year)] = row[col_idx]
 
 # Final Merge
-name_map = {'BEL':'Belgium','DEU':'Germany','FIN':'Finland','FRA':'France','IRL':'Ireland','NLD':'Netherlands','NOR':'Norway','POL':'Poland','PRT':'Portugal','SWE':'Sweden','CHE':'Switzerland','SVN':'Slovenia','ESP':'Spain','HUN':'Hungary','GBR':'United Kingdom'}
-iso2_to_3 = {'BE':'BEL','DE':'DEU','FI':'FIN','FR':'FRA','IE':'IRL','NL':'NLD','NO':'NOR','PL':'POL','PT':'PRT','SE':'SWE','CH':'CHE','SI':'SVN','ES':'ESP','HU':'HUN','GB':'GBR'}
+name_map = {
+    'ALB':'Albania', 'AUT':'Austria', 'BEL':'Belgium', 'BGR':'Bulgaria',
+    'CHE':'Switzerland', 'CYP':'Cyprus', 'CZE':'Czechia', 'DEU':'Germany',
+    'DNK':'Denmark', 'EST':'Estonia', 'ESP':'Spain', 'FIN':'Finland',
+    'FRA':'France', 'GBR':'United Kingdom', 'GRC':'Greece', 'HRV':'Croatia',
+    'HUN':'Hungary', 'IRL':'Ireland', 'ISR':'Israel', 'ISL':'Iceland',
+    'ITA':'Italy', 'LTU':'Lithuania', 'LUX':'Luxembourg', 'LVA':'Latvia',
+    'MNE':'Montenegro', 'MKD':'North Macedonia', 'NLD':'Netherlands',
+    'NOR':'Norway', 'POL':'Poland', 'PRT':'Portugal', 'ROU':'Romania',
+    'SRB':'Serbia', 'RUS':'Russia', 'SWE':'Sweden', 'SVN':'Slovenia',
+    'SVK':'Slovakia', 'TUR':'Turkey', 'UKR':'Ukraine', 'XKX':'Kosovo',
+}
+iso2_to_3 = {
+    'AL':'ALB', 'AT':'AUT', 'BE':'BEL', 'BG':'BGR', 'CH':'CHE', 'CY':'CYP',
+    'CZ':'CZE', 'DE':'DEU', 'DK':'DNK', 'EE':'EST', 'ES':'ESP', 'FI':'FIN',
+    'FR':'FRA', 'GB':'GBR', 'GR':'GRC', 'HR':'HRV', 'HU':'HUN', 'IE':'IRL',
+    'IL':'ISR', 'IS':'ISL', 'IT':'ITA', 'LT':'LTU', 'LU':'LUX', 'LV':'LVA',
+    'ME':'MNE', 'MK':'MKD', 'NL':'NLD', 'NO':'NOR', 'PL':'POL', 'PT':'PRT',
+    'RO':'ROU', 'RS':'SRB', 'RU':'RUS', 'SE':'SWE', 'SI':'SVN', 'SK':'SVK',
+    'TR':'TUR', 'UA':'UKR', 'XK':'XKX',
+}
 
 ess_v3 = os.path.join(base_path, "merged_ess_complete_v3.csv")
 ess_final = os.path.join(base_path, "merged_ess_complete_final.csv")

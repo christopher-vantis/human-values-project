@@ -80,25 +80,42 @@ for row in raw_data[start_row:]:
                 gov_exp_map[(country, year)] = val
 
 name_to_iso = {
-    'Belgium': 'BEL', 'Germany': 'DEU', 'Finland': 'FIN', 'France': 'FRA', 
-    'Ireland': 'IRL', 'Netherlands': 'NLD', 'Norway': 'NOR', 'Poland': 'POL', 
-    'Portugal': 'PRT', 'Sweden': 'SWE', 'Switzerland': 'CHE', 'Slovenia': 'SI', 
-    'Spain': 'ESP', 'Hungary': 'HUN', 'United Kingdom': 'GBR'
+    'Albania': 'ALB', 'Austria': 'AUT', 'Belgium': 'BEL', 'Bulgaria': 'BGR',
+    'Switzerland': 'CHE', 'Cyprus': 'CYP', 'Czechia': 'CZE', 'Czech Republic': 'CZE',
+    'Germany': 'DEU', 'Denmark': 'DNK', 'Estonia': 'EST', 'Spain': 'ESP',
+    'Finland': 'FIN', 'France': 'FRA', 'United Kingdom': 'GBR', 'Greece': 'GRC',
+    'Croatia': 'HRV', 'Hungary': 'HUN', 'Ireland': 'IRL', 'Israel': 'ISR',
+    'Iceland': 'ISL', 'Italy': 'ITA', 'Lithuania': 'LTU', 'Luxembourg': 'LUX',
+    'Latvia': 'LVA', 'Montenegro': 'MNE', 'North Macedonia': 'MKD',
+    'Netherlands': 'NLD', 'Norway': 'NOR', 'Poland': 'POL', 'Portugal': 'PRT',
+    'Romania': 'ROU', 'Serbia': 'SRB', 'Russia': 'RUS', 'Sweden': 'SWE',
+    'Slovenia': 'SVN', 'Slovakia': 'SVK', 'Turkey': 'TUR', 'Turkiye': 'TUR',
+    'Ukraine': 'UKR', 'Kosovo': 'XKX',
 }
 
 # The ISO mapping in ESS is ISO-2
 iso_map_2_to_3 = {
-    'BE': 'BEL', 'DE': 'DEU', 'FI': 'FIN', 'FR': 'FRA', 'IE': 'IRL',
-    'NL': 'NLD', 'NO': 'NOR', 'PL': 'POL', 'PT': 'PRT', 'SE': 'SWE',
-    'CH': 'CHE', 'SI': 'SVN', 'ES': 'ESP', 'HU': 'HUN', 'GB': 'GBR'
+    'AL': 'ALB', 'AT': 'AUT', 'BE': 'BEL', 'BG': 'BGR', 'CH': 'CHE', 'CY': 'CYP',
+    'CZ': 'CZE', 'DE': 'DEU', 'DK': 'DNK', 'EE': 'EST', 'ES': 'ESP', 'FI': 'FIN',
+    'FR': 'FRA', 'GB': 'GBR', 'GR': 'GRC', 'HR': 'HRV', 'HU': 'HUN', 'IE': 'IRL',
+    'IL': 'ISR', 'IS': 'ISL', 'IT': 'ITA', 'LT': 'LTU', 'LU': 'LUX', 'LV': 'LVA',
+    'ME': 'MNE', 'MK': 'MKD', 'NL': 'NLD', 'NO': 'NOR', 'PL': 'POL', 'PT': 'PRT',
+    'RO': 'ROU', 'RS': 'SRB', 'RU': 'RUS', 'SE': 'SWE', 'SI': 'SVN', 'SK': 'SVK',
+    'TR': 'TUR', 'UA': 'UKR', 'XK': 'XKX',
 }
 
 # Reverse mapping for matching Eurostat names
 iso3_to_name = {
-    'BEL': 'Belgium', 'DEU': 'Germany', 'FIN': 'Finland', 'FRA': 'France',
-    'IRL': 'Ireland', 'NLD': 'Netherlands', 'NOR': 'Norway', 'POL': 'Poland',
-    'PRT': 'Portugal', 'SWE': 'Sweden', 'CHE': 'Switzerland', 'SVN': 'Slovenia',
-    'ESP': 'Spain', 'HUN': 'Hungary', 'GBR': 'United Kingdom'
+    'ALB': 'Albania', 'AUT': 'Austria', 'BEL': 'Belgium', 'BGR': 'Bulgaria',
+    'CHE': 'Switzerland', 'CYP': 'Cyprus', 'CZE': 'Czechia', 'DEU': 'Germany',
+    'DNK': 'Denmark', 'EST': 'Estonia', 'ESP': 'Spain', 'FIN': 'Finland',
+    'FRA': 'France', 'GBR': 'United Kingdom', 'GRC': 'Greece', 'HRV': 'Croatia',
+    'HUN': 'Hungary', 'IRL': 'Ireland', 'ISR': 'Israel', 'ISL': 'Iceland',
+    'ITA': 'Italy', 'LTU': 'Lithuania', 'LUX': 'Luxembourg', 'LVA': 'Latvia',
+    'MNE': 'Montenegro', 'MKD': 'North Macedonia', 'NLD': 'Netherlands',
+    'NOR': 'Norway', 'POL': 'Poland', 'PRT': 'Portugal', 'ROU': 'Romania',
+    'SRB': 'Serbia', 'RUS': 'Russia', 'SWE': 'Sweden', 'SVN': 'Slovenia',
+    'SVK': 'Slovakia', 'TUR': 'Turkey', 'UKR': 'Ukraine', 'XKX': 'Kosovo',
 }
 
 ess_final = os.path.join(base_path, "merged_ess_macro_final.csv")

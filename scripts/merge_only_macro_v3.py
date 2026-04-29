@@ -8,10 +8,17 @@ target_dir = "/home/c-vantis/jd/40_projects/43_human_values_project/macro_data_m
 
 # ISO mapping
 name_to_iso = {
-    'Belgium': 'BEL', 'Germany': 'DEU', 'Finland': 'FIN', 'France': 'FRA', 
-    'Ireland': 'IRL', 'Netherlands': 'NLD', 'Norway': 'NOR', 'Poland': 'POL', 
-    'Portugal': 'PRT', 'Sweden': 'SWE', 'Switzerland': 'CHE', 'Slovenia': 'SVN', 
-    'Spain': 'ESP', 'Hungary': 'HUN', 'United Kingdom': 'GBR'
+    'Albania': 'ALB', 'Austria': 'AUT', 'Belgium': 'BEL', 'Bulgaria': 'BGR',
+    'Switzerland': 'CHE', 'Cyprus': 'CYP', 'Czechia': 'CZE', 'Czech Republic': 'CZE',
+    'Germany': 'DEU', 'Denmark': 'DNK', 'Estonia': 'EST', 'Spain': 'ESP',
+    'Finland': 'FIN', 'France': 'FRA', 'United Kingdom': 'GBR', 'Greece': 'GRC',
+    'Croatia': 'HRV', 'Hungary': 'HUN', 'Ireland': 'IRL', 'Israel': 'ISR',
+    'Iceland': 'ISL', 'Italy': 'ITA', 'Lithuania': 'LTU', 'Luxembourg': 'LUX',
+    'Latvia': 'LVA', 'Montenegro': 'MNE', 'North Macedonia': 'MKD',
+    'Netherlands': 'NLD', 'Norway': 'NOR', 'Poland': 'POL', 'Portugal': 'PRT',
+    'Romania': 'ROU', 'Serbia': 'SRB', 'Russia': 'RUS', 'Sweden': 'SWE',
+    'Slovenia': 'SVN', 'Slovakia': 'SVK', 'Turkey': 'TUR', 'Turkiye': 'TUR',
+    'Ukraine': 'UKR', 'Kosovo': 'XKX',
 }
 target_iso3 = set(name_to_iso.values())
 

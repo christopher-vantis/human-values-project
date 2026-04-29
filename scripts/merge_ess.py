@@ -4,7 +4,12 @@ import glob
 
 # Configuration
 base_path = "/home/c-vantis/jd/40_projects/43_human_values_project"
-countries = ['BE', 'DE', 'FI', 'FR', 'IE', 'NL', 'NO', 'PL', 'PT', 'SE', 'CH', 'SI', 'ES', 'HU', 'GB']
+countries = [
+    'AL', 'AT', 'BE', 'BG', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE',
+    'ES', 'FI', 'FR', 'GB', 'GR', 'HR', 'HU', 'IE', 'IL', 'IS',
+    'IT', 'LT', 'LU', 'LV', 'ME', 'MK', 'NL', 'NO', 'PL', 'PT',
+    'RO', 'RS', 'RU', 'SE', 'SI', 'SK', 'TR', 'UA', 'XK',
+]
 
 # Mapping rounds to years (approximate start of data collection)
 round_years = {

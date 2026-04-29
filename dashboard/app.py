@@ -96,6 +96,53 @@ def _interaction_box(items):
     })
 
 
+_METHOD_OPEN = {
+    'display': 'block',
+    'margin-top': '10px',
+    'padding': '10px 12px',
+    'background-color': '#f7f9fc',
+    'border-radius': '6px',
+    'border-left': '3px solid #c0cce0',
+    'font-size': '11px',
+    'color': '#3a4a60',
+    'line-height': '1.55',
+}
+
+
+def _method_panel(btn_id: str, content_id: str, rows: list):
+    """Collapsible methodology panel. rows = list of (title, body) tuples."""
+    items = []
+    for i, (title, body) in enumerate(rows):
+        items.append(html.P(title, style={
+            'font-weight': '700', 'color': '#1a2840',
+            'font-size': '11px', 'margin': '0 0 3px',
+        }))
+        items.append(html.P(body, style={
+            'margin': '0 0 9px' if i < len(rows) - 1 else '0',
+        }))
+    return html.Div([
+        html.Button(
+            '? Methodology',
+            id=btn_id,
+            n_clicks=0,
+            style={
+                'width': '100%',
+                'background': 'none',
+                'border': '1px solid #c0cce0',
+                'border-radius': '5px',
+                'padding': '6px 10px',
+                'font-size': '11.5px',
+                'color': '#4a6080',
+                'cursor': 'pointer',
+                'text-align': 'left',
+                'font-family': 'inherit',
+                'letter-spacing': '0.2px',
+            },
+        ),
+        html.Div(items, id=content_id, style={'display': 'none'}),
+    ], style={'margin-top': '14px'})
+
+
 def _make_cluster_summary(result, n_clusters):
     """Sidebar cluster summary: one line per cluster with countries and dominant dim."""
     if result is None or result.empty:
@@ -342,65 +389,6 @@ landing = html.Div([
     html.Hr(className='lp-hr'),
 
     html.Div([
-        html.H2('How to Read the Dashboard', className='lp-h2'),
-        html.Ul([
-            html.Li([
-                html.B('Δ-scores (radar charts): '),
-                'Each value score is centred at that country\'s mean across all '
-                '10 values for that round. Positive = above-average priority for '
-                'that country; negative = below-average. This removes country-level '
-                'scale-use biases.',
-            ], className='lp-li'),
-            html.Li([
-                html.B('Higher-order arcs (radar charts): '),
-                'Coloured arcs on the outside group the 10 values into their '
-                'four higher-order dimensions - ',
-                html.Span('blue = Openness',
-                          style={'color': DIM_COLORS['Openness to Change'], 'font-weight': '600'}),
-                ', ',
-                html.Span('purple = Self-Transcendence',
-                          style={'color': DIM_COLORS['Self-Transcendence'], 'font-weight': '600'}),
-                ', ',
-                html.Span('green = Conservation',
-                          style={'color': DIM_COLORS['Conservation'], 'font-weight': '600'}),
-                ', ',
-                html.Span('red = Self-Enhancement',
-                          style={'color': DIM_COLORS['Self-Enhancement'], 'font-weight': '600'}),
-                '.',
-            ], className='lp-li'),
-            html.Li([
-                html.B('Correlations (Tab 2): '),
-                'Scatter plots of country-level predictors (ESS social variables, '
-                'external macro indicators, COFOG government expenditure) against '
-                'the four Schwartz higher-order dimensions. Unit of analysis: '
-                'country means across all ESS rounds (N up to 39). Each point is one '
-                'country. The regression line shows the OLS fit; the shaded band '
-                'is the 95 % parametric confidence interval. '
-                'Select "All 4 Dimensions" to see a 2×2 overview grid, or pick '
-                'one dimension for a larger single plot.',
-            ], className='lp-li'),
-            html.Li([
-                html.B('Value Space (Tab 3): '),
-                'Countries are projected into 2D using PCA on their 10 Schwartz '
-                'Δ-scores. Proximity = similar value profiles. Radar glyphs show '
-                'the actual profile at each position. K-Means clusters group '
-                'countries with similar profiles.',
-            ], className='lp-li'),
-            html.Li([
-                html.B('Parallel Coordinates (Tab 3): '),
-                'Median + IQR band per Schwartz dimension across 11 attitude axes. '
-                'Each colored band shows the interquartile range (25th-75th '
-                'percentile) and the smooth median line for respondents whose '
-                'dominant value dimension is Openness to Change, Self-Transcendence, '
-                'Conservation, or Self-Enhancement. Use the "Highlight Dimension" '
-                'dropdown to focus on one group.',
-            ], className='lp-li'),
-        ], className='lp-ul'),
-    ], className='lp-section'),
-
-    html.Hr(className='lp-hr'),
-
-    html.Div([
         html.H2('Limitations', className='lp-h2'),
 
         html.Div([
@@ -450,52 +438,21 @@ landing = html.Div([
     html.Hr(className='lp-hr'),
 
     html.Div([
-        html.H2('Value Space: Glyph Placement & Clustering', className='lp-h2'),
-
         html.P([
-            'The Value Space tab uses a technique from information visualization '
-            'research called ',
-            html.B('derived data-driven glyph placement'),
-            ' (Ward, 2002). Each country\'s value profile - defined by its '
-            '10 Schwartz Δ-scores - is treated as a point in 10-dimensional space. ',
-            html.B('Principal Component Analysis (PCA)'),
-            ' projects these points onto 2 dimensions while preserving as much '
-            'variance as possible, so that countries with similar value profiles '
-            'land close together and countries with different profiles land far apart.',
-        ], className='lp-p'),
-
-        html.P([
-            'At each position in this 2D space, a small ',
-            html.B('radar glyph'),
-            ' shows the actual value profile of that country - so the position '
-            'tells you who is similar, and the shape tells you how. Countries are '
-            'grouped into clusters using ',
-            html.B('K-Means'),
-            ' applied to the original 10-dimensional profiles (not the PCA '
-            'projection). Clusters are shown as coloured regions. The number of '
-            'clusters is adjustable via the sidebar slider.',
-        ], className='lp-p'),
-
-        html.P([
-            'The PCA axes are labeled based on the Schwartz dimensions that load '
-            'most strongly onto each component. Because value dimensions are '
-            'theoretically organised in a circumplex (opposing dimensions are '
-            'negatively correlated), PC1 typically captures the ',
-            html.B('Conservation ↔ Openness to Change'),
-            ' contrast, and PC2 typically captures the ',
-            html.B('Self-Enhancement ↔ Self-Transcendence'),
-            ' contrast - the two main axes of the Schwartz value space. '
-            'Variance explained by each axis is shown in the axis label.',
-        ], className='lp-p'),
-
-        html.P([
-            'PCA and clustering are computed on the 10 Schwartz basic value '
-            'Δ-scores aggregated per country × ESS round from the European Social '
-            'Survey. Up to 39 countries across 11 rounds (2002-2023). Use the round slider to '
-            'explore whether country clusters have shifted over time - given the '
-            'theoretical stability of value profiles, large movements should be '
-            'interpreted with caution.',
-        ], className='lp-p'),
+            'Each tab includes a dedicated ',
+            html.B('? Methodology'),
+            ' panel in the sidebar. Click it to read about the analytical approach, '
+            'units of analysis, and visualisation conventions specific to that view.',
+        ], style={
+            'font-size': '12px',
+            'color': '#3a4a60',
+            'background-color': '#edf1f8',
+            'border-left': '3px solid #1a5fb4',
+            'border-radius': '6px',
+            'padding': '10px 14px',
+            'margin': '0',
+            'line-height': '1.6',
+        }),
     ], className='lp-section'),
 
 ], className='landing-page')
@@ -540,12 +497,30 @@ tab1 = html.Div([
                 'Select a country from the dropdown',
                 'Drag the slider to change ESS round',
             ]),
-            html.Div(style={'height': '14px'}),
-            html.Div(id='t1-country-info'),
+            _method_panel('t1-method-btn', 't1-method-content', [
+                ('Δ-scores',
+                 'Each value is centred at that country\'s mean across all 10 values '
+                 'for the selected round. A positive score indicates above-average '
+                 'relative priority; negative means below-average. Centring removes '
+                 'country-level scale-use biases so that only relative priorities matter.'),
+                ('PVQ-21 measurement',
+                 'Values are elicited via 21 short portrait descriptions. Respondents '
+                 'rate how similar each portrait is to them on a 1-6 scale. Item means '
+                 'are aggregated at country × ESS round level after excluding '
+                 'out-of-range missing codes.'),
+                ('Higher-order dimensions',
+                 'The 10 basic values are grouped into 4 dimensions following '
+                 'Schwartz\'s theoretical structure. Coloured arcs on the outer ring '
+                 'mark these groupings: Openness to Change (Self-Direction, Stimulation, '
+                 'Hedonism), Self-Transcendence (Universalism, Benevolence), '
+                 'Conservation (Security, Conformity, Tradition), '
+                 'Self-Enhancement (Power, Achievement).'),
+            ]),
         ], className='sidebar'),
 
         html.Div([
             dcc.Graph(id='t1-radar', config={'displayModeBar': False}),
+            html.Div(id='t1-country-info'),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
@@ -668,6 +643,24 @@ tab_corr = html.Div([
                 'Choose "All 4 Dimensions" for a 2×2 overview',
                 'Hover a country flag for name and exact values',
             ]),
+            _method_panel('tc-method-btn', 'tc-method-content', [
+                ('Unit of analysis',
+                 'Each data point is one country in one ESS round. Selecting '
+                 '"All rounds" aggregates to a single point per country - the mean '
+                 'of that country\'s values across all rounds it participated in.'),
+                ('Predictor variables',
+                 'Three categories: ESS-derived social variables (country-round means '
+                 'from the survey), external macro indicators (V-Dem Liberal Democracy '
+                 'Index, World Bank GDP, Gini, unemployment), and Eurostat COFOG '
+                 'government expenditure shares. Source details appear below the '
+                 'predictor dropdown.'),
+                ('Statistical approach',
+                 'Pearson r measures the linear association between predictor and '
+                 'Schwartz dimension. The OLS regression line and 95 % parametric '
+                 'confidence band are computed from the visible data points. N is '
+                 'shown in each panel annotation and varies by round, since not all '
+                 '39 countries participated in every ESS round.'),
+            ]),
         ], className='sidebar'),
 
         html.Div([
@@ -711,6 +704,24 @@ tab2 = html.Div([
                 'Hover over a country point for its profile details',
                 'Adjust the cluster slider to change group count',
                 'Drag the year slider to explore change over time',
+            ]),
+            _method_panel('t2-method-btn', 't2-method-content', [
+                ('Principal Component Analysis',
+                 'Each country\'s 10 Schwartz Δ-scores are projected onto 2 principal '
+                 'components that capture the most variance in value profiles. Countries '
+                 'close together in the space have similar overall profiles; countries '
+                 'far apart differ substantially. Variance explained by each axis is '
+                 'shown in the axis label.'),
+                ('Axis orientation',
+                 'Axes are labeled by the Schwartz dimension contrast that loads most '
+                 'strongly on each component - typically Conservation vs. Openness to '
+                 'Change (PC1) and Self-Enhancement vs. Self-Transcendence (PC2), '
+                 'reflecting the two main axes of the theoretical value circumplex.'),
+                ('K-Means clustering',
+                 'Clusters are computed in the original 10-dimensional value space, not '
+                 'in the PCA projection. Coloured regions show cluster membership. '
+                 'Radar glyphs placed at each country\'s PCA coordinates show its actual '
+                 'value profile, so both position and glyph shape carry information.'),
             ]),
         ], className='sidebar'),
 
@@ -776,6 +787,24 @@ tab3 = html.Div([
                 'Drag on any axis to filter respondents to a range',
                 'Drag the selection band to move it up / down the axis',
                 'Combine filters across axes to narrow to a specific profile',
+            ]),
+            _method_panel('t3-method-btn', 't3-method-content', [
+                ('Data and sampling',
+                 'Individual ESS respondents are pooled across all 11 rounds and up to '
+                 '39 countries. To keep the visualisation legible, 300 respondents per '
+                 'dominant dimension are selected via stratified random sampling '
+                 '(1 200 total). The random seed is fixed, so results are reproducible.'),
+                ('Dominant dimension',
+                 'Each respondent\'s PVQ items are ipsatized - centred at their '
+                 'personal mean to remove individual scale-use tendencies. Four '
+                 'higher-order dimension scores are then computed, and the dimension '
+                 'with the highest relative score is assigned as that respondent\'s '
+                 'dominant dimension.'),
+                ('Axis filtering',
+                 'Drag on any axis to create a range filter. Multiple filters across '
+                 'axes combine to isolate respondents that satisfy all conditions '
+                 'simultaneously. Drag the filter band along an axis to shift the '
+                 'selected range without changing its width.'),
             ]),
         ], className='sidebar'),
 
@@ -932,32 +961,42 @@ def update_t1_info(country):
     rounds_str   = f'{dp.YEAR_TO_ROUND[rounds_avail[0]]}-{dp.YEAR_TO_ROUND[rounds_avail[-1]]}' \
                    if len(rounds_avail) > 1 else str(dp.YEAR_TO_ROUND[rounds_avail[0]])
 
-    def _row(label, value):
-        return html.Tr([
-            html.Td(label, style={'color': '#7a90b0', 'font-size': '11px',
-                                   'padding': '2px 8px 2px 0', 'white-space': 'nowrap'}),
-            html.Td(value, style={'color': '#1a2840', 'font-size': '11px',
-                                   'font-weight': '500'}),
-        ])
+    def _stat(label, value):
+        return html.Div([
+            html.Div(label, style={
+                'font-size': '10px', 'font-weight': '600', 'color': '#7a90b0',
+                'text-transform': 'uppercase', 'letter-spacing': '0.5px',
+                'margin-bottom': '4px',
+            }),
+            html.Div(value, style={
+                'font-size': '13px', 'font-weight': '600', 'color': '#1a2840',
+                'line-height': '1.3',
+            }),
+        ], style={
+            'flex': '1',
+            'min-width': '80px',
+            'padding': '0 16px 0 0',
+        })
 
     return html.Div([
-        html.P('Country facts', style={
-            'font-size': '11px', 'font-weight': '700', 'color': '#1a2840',
-            'margin': '0 0 6px', 'text-transform': 'uppercase', 'letter-spacing': '0.5px',
+        html.Div([
+            _stat('Capital',     capital),
+            _stat('Population',  f'{pop_m:.1f} M'),
+            _stat('Density',     f'{density:,} / km²'),
+            _stat('System',      system),
+            _stat('EU status',   eu),
+            _stat('ESS rounds',  f'R{rounds_str}  ({len(rounds_avail)} of 11)'),
+        ], style={
+            'display': 'flex',
+            'flex-wrap': 'wrap',
+            'gap': '12px 0',
         }),
-        html.Table([
-            _row('Capital',     capital),
-            _row('Population',  f'{pop_m:.1f} M'),
-            _row('Density',     f'{density:,} / km²'),
-            _row('System',      system),
-            _row('EU status',   eu),
-            _row('ESS rounds',  f'{rounds_str}  ({len(rounds_avail)} of 11)'),
-        ], style={'border-collapse': 'collapse', 'width': '100%'}),
     ], style={
-        'padding': '10px 12px',
+        'margin-top': '14px',
+        'padding': '14px 18px',
         'background-color': '#f7f9fc',
-        'border-radius': '6px',
-        'border-left': '3px solid #c0cce0',
+        'border-radius': '8px',
+        'border-top': '3px solid #c0cce0',
     })
 
 
@@ -1032,6 +1071,54 @@ def update_t3(highlight_dim):
     label = highlight_dim if highlight_dim != 'all' else 'All Dimensions'
     title = f'Parallel Coordinates  ·  Highlight: {label}  ·  All ESS Rounds'
     return make_parallel_micro(DF_MICRO, highlight_dim), title
+
+
+# ── Methodology panel toggles ─────────────────────────────────────────────────
+
+def _toggle(n):
+    open_ = bool(n and n % 2 == 1)
+    return _METHOD_OPEN if open_ else {'display': 'none'}, \
+           '▲ Methodology' if open_ else '? Methodology'
+
+
+@app.callback(
+    Output('t1-method-content', 'style'),
+    Output('t1-method-btn', 'children'),
+    Input('t1-method-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def toggle_t1_method(n):
+    return _toggle(n)
+
+
+@app.callback(
+    Output('tc-method-content', 'style'),
+    Output('tc-method-btn', 'children'),
+    Input('tc-method-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def toggle_tc_method(n):
+    return _toggle(n)
+
+
+@app.callback(
+    Output('t2-method-content', 'style'),
+    Output('t2-method-btn', 'children'),
+    Input('t2-method-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def toggle_t2_method(n):
+    return _toggle(n)
+
+
+@app.callback(
+    Output('t3-method-content', 'style'),
+    Output('t3-method-btn', 'children'),
+    Input('t3-method-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def toggle_t3_method(n):
+    return _toggle(n)
 
 
 server = app.server  # expose Flask server for gunicorn

@@ -2,7 +2,7 @@
 
 > Exploring what people across Europe value - and why it differs.
 
-An interactive data dashboard built with Python and Plotly Dash, visualising [Schwartz basic human values](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=7gi3pqoAAAAJ&citation_for_view=7gi3pqoAAAAJ:d1gkVwhDpl0C) across 14 European countries using data from the European Social Survey (ESS), Rounds 1–11 (2002–2023).
+An interactive data dashboard built with Python and Plotly Dash, visualising [Schwartz basic human values](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=7gi3pqoAAAAJ&citation_for_view=7gi3pqoAAAAJ:d1gkVwhDpl0C) across 39 European countries using data from the European Social Survey (ESS), Rounds 1–11 (2002–2023).
 
 **[→ Live demo](https://little-project-on-human-values.onrender.com)**
 
@@ -17,7 +17,7 @@ The Schwartz model proposes that 10 basic human values - arranged in a circular 
 | **About** | Theory background, dataset documentation, and how to read the charts |
 | **Country Profile** | Radar chart of one country's value profile for a selected ESS round |
 | **Correlations** | Scatter plots: country-level predictors vs. Schwartz higher-order dimensions, with OLS regression and 95 % CI bands |
-| **Value Space** | PCA projection of all 14 countries into 2D by value similarity, with K-Means clustering |
+| **Value Space** | PCA projection of all 39 countries into 2D by value similarity, with K-Means clustering |
 | **Individual Profiles** | Parallel coordinates: 1 200 sampled ESS respondents coloured by dominant value dimension |
 | **Parallel Coordinates** | Country × round lines across Schwartz dimensions and macro indicators |
 

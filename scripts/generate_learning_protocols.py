@@ -1061,7 +1061,7 @@ def proto_scatter_corr():
          T("Dieses Modul visualisiert Pearson-Korrelationen zwischen Ländermitteln "
            "von 17 Prädiktoren (ESS-Sozialvariablen, externe Makroindikatoren, "
            "COFOG-Staatsausgaben) und den vier Schwartz-Dimensionen. "
-           "Analyseeinheit: ein Mittelwert pro Land über alle ESS-Runden (N = 14). "
+           "Analyseeinheit: ein Mittelwert pro Land über alle ESS-Runden (N bis zu 39). "
            "Ein Dropdown wählt die X-Achse (Prädiktor); ein zweites wählt eine oder "
            "alle vier Dimensionen. Die Visualisierung zeigt OLS-Regressionsgerade, "
            "95 %-Konfidenzband, Länderkürzel-Labels und Hover mit genauen Werten.", "body"),
@@ -1077,7 +1077,7 @@ def proto_scatter_corr():
               "# r         = Pearson-Korrelationskoeffizient\n"
               "# p         = zweiseitiger p-Wert für H0: slope=0\n"
               "# stderr    = Standardfehler der Steigung"),
-         T("Bei N=14 (df=12) ist die Teststärke gering. p < 0.10 wird als "
+         T("Bei N bis zu 39 (df bis zu 37) steigt die Teststärke erheblich. p < 0.05 wird als "
            "Signifikanzgrenze verwendet (†), da auch schwache Trends bei kleinem "
            "N substantiell bedeutsam sein können.", "body"),
          SPACE(6),
