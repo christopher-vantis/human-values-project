@@ -409,7 +409,7 @@ landing = html.Div([
                 'Schwartz and Bardi (2001) showed across 13 samples from 56 countries that value '
                 'hierarchies share a remarkably stable cross-cultural structure: Benevolence and '
                 'Universalism rank near the top in virtually all societies; Stimulation, Tradition, '
-                'and Power near the bottom. If all 14 countries here show a positive delta for '
+                'and Power near the bottom. If countries consistently show a positive delta for '
                 'Benevolence/Universalism and a negative one for Stimulation, that reflects a '
                 'universal regularity - not a country-specific finding. ',
                 html.B('What is informative are the deviations of individual countries from the '
@@ -491,7 +491,7 @@ landing = html.Div([
         html.P([
             'PCA and clustering are computed on the 10 Schwartz basic value '
             'Δ-scores aggregated per country × ESS round from the European Social '
-            'Survey. 14 countries, 11 rounds (2002-2023). Use the round slider to '
+            'Survey. Up to 39 countries across 11 rounds (2002-2023). Use the round slider to '
             'explore whether country clusters have shifted over time - given the '
             'theoretical stability of value profiles, large movements should be '
             'interpreted with caution.',
@@ -540,6 +540,8 @@ tab1 = html.Div([
                 'Select a country from the dropdown',
                 'Drag the slider to change ESS round',
             ]),
+            html.Div(style={'height': '14px'}),
+            html.Div(id='t1-country-info'),
         ], className='sidebar'),
 
         html.Div([
@@ -594,7 +596,7 @@ tab_corr = html.Div([
         html.Div([
             _subtitle(
                 'Pearson correlations between country-level predictors and '
-                'Schwartz value dimensions. N = 14 countries per round. '
+                'Schwartz value dimensions. N varies per round (up to 30+ countries). '
                 'Regression line with 95 % CI band.'
             ),
             _ctrl_label('ESS Round'),
@@ -748,7 +750,7 @@ tab3 = html.Div([
         html.Div([
             _subtitle(
                 'Each line is one ESS respondent, pooled across all '
-                '11 rounds and 14 countries. Lines are coloured by the '
+                '11 rounds and 39 countries. Lines are coloured by the '
                 'person\'s dominant Schwartz value dimension - the '
                 'higher-order dimension with the highest relative priority. '
                 'Each group is a stratified sample of 300 respondents.'
@@ -847,7 +849,7 @@ app.layout = html.Div([
         html.H1('Little Project on Human Values', className='main-title'),
         html.P(
             'Exploring what people across Europe value - and why it differs. '
-            'Schwartz basic human values measured in 14 countries across '
+            'Schwartz basic human values measured across 39 European countries, '
             'ESS Rounds 1-11 (2002-2023), linked to macro indicators and social attitudes.',
             className='main-subtitle',
         ),
@@ -912,6 +914,49 @@ def update_t1_slider(country, current_year):
 )
 def update_t1(country, year):
     return make_radar_single(DF, country, year)
+
+
+@app.callback(
+    Output('t1-country-info', 'children'),
+    Input('t1-country', 'value'),
+)
+def update_t1_info(country):
+    info = dp.COUNTRY_INFO.get(country)
+    if not info:
+        return []
+    capital, pop_m, area_km2, system, eu = info
+    density = round(pop_m * 1_000_000 / area_km2)
+    rounds_avail = sorted(DF[DF['cntry'] == country]['year'].unique())
+    rounds_str   = f'{dp.YEAR_TO_ROUND[rounds_avail[0]]}-{dp.YEAR_TO_ROUND[rounds_avail[-1]]}' \
+                   if len(rounds_avail) > 1 else str(dp.YEAR_TO_ROUND[rounds_avail[0]])
+
+    def _row(label, value):
+        return html.Tr([
+            html.Td(label, style={'color': '#7a90b0', 'font-size': '11px',
+                                   'padding': '2px 8px 2px 0', 'white-space': 'nowrap'}),
+            html.Td(value, style={'color': '#1a2840', 'font-size': '11px',
+                                   'font-weight': '500'}),
+        ])
+
+    return html.Div([
+        html.P('Country facts', style={
+            'font-size': '11px', 'font-weight': '700', 'color': '#1a2840',
+            'margin': '0 0 6px', 'text-transform': 'uppercase', 'letter-spacing': '0.5px',
+        }),
+        html.Table([
+            _row('Capital',     capital),
+            _row('Population',  f'{pop_m:.1f} M'),
+            _row('Density',     f'{density:,} / km²'),
+            _row('System',      system),
+            _row('EU status',   eu),
+            _row('ESS rounds',  f'{rounds_str}  ({len(rounds_avail)} of 11)'),
+        ], style={'border-collapse': 'collapse', 'width': '100%'}),
+    ], style={
+        'padding': '10px 12px',
+        'background-color': '#f7f9fc',
+        'border-radius': '6px',
+        'border-left': '3px solid #c0cce0',
+    })
 
 
 # Tab Corr - Correlations
