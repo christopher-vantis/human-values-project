@@ -87,13 +87,27 @@ for r in range(1, 12):
     header_df.columns = header_df.columns.str.lower()
     avail = set(header_df.columns)
 
-    needed = ['cntry','essround'] + PVQ_ITEMS + \
+    # PVQ items may have 'a'/'b' suffix in some ESS rounds (e.g. 'ipcrtiva' in ESS11)
+    def norm_pvq(col):
+        if col.startswith('ip') and len(col) > 5 and col[-1] in ('a', 'b'):
+            return col[:-1]
+        return col
+
+    pvq_col_map = {}  # actual_col -> normalized_name
+    for col in avail:
+        norm = norm_pvq(col)
+        if norm in PVQ_ITEMS:
+            pvq_col_map[col] = norm
+
+    needed = ['cntry', 'essround'] + list(pvq_col_map.keys()) + \
              [spec[0] for spec in SOCIAL_VARS.values() if spec is not None] + \
-             ['brncntr','facntr','mocntr']
+             ['brncntr', 'facntr', 'mocntr']
     usecols = [c for c in needed if c in avail]
 
     df = pd.read_csv(csvs[0], usecols=usecols, low_memory=False)
     df.columns = df.columns.str.lower()
+    # Normalize PVQ column names (remove 'a'/'b' suffix)
+    df.rename(columns={k: v for k, v in pvq_col_map.items() if k in df.columns}, inplace=True)
     df = df[df['cntry'].str.upper().isin(ALL_COUNTRIES)].copy()
     df['cntry'] = df['cntry'].str.upper()
 
