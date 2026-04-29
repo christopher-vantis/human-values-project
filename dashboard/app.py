@@ -248,10 +248,12 @@ landing = html.Div([
             'Data come from the ',
             html.B('European Social Survey (ESS)'), ', Rounds 1-11 (2002-2023), '
             'conducted approximately every two years across Europe. '
-            'Individual-level survey responses are aggregated to country × round level. '
-            'The dashboard covers ', html.B('14 countries'), ' with consistent '
-            'participation: Belgium, Switzerland, Germany, Spain, Finland, France, '
-            'Hungary, Ireland, Netherlands, Norway, Poland, Portugal, Sweden, and Slovenia.',
+            'Individual-level survey responses are aggregated to country x round level. '
+            'The dashboard covers all ', html.B('39 countries'), ' that have ever '
+            'participated in the ESS, from 1 round (Albania, Kosovo, Romania) '
+            'to 11 rounds (Belgium, Finland, France, Ireland, Netherlands, Norway, '
+            'Portugal, Slovenia, Switzerland). Countries with fewer rounds appear '
+            'only for the years they participated.',
         ], className='lp-p'),
 
         # ── ESS social aggregates ──
@@ -295,22 +297,29 @@ landing = html.Div([
             html.Li([
                 html.B('Liberal Democracy Index: '),
                 'V-Dem Project, Country-Year dataset v15 (v2x_libdem, 0-1). '
-                'Varieties of Democracy Institute, University of Gothenburg.',
+                'Varieties of Democracy Institute, University of Gothenburg. '
+                'Full coverage for all 39 ESS countries.',
             ], className='lp-li', style={'margin-bottom': '5px'}),
             html.Li([
-                html.B('Gini Index (income inequality): '),
-                'World Bank World Development Indicators (SI.POV.GINI, 0-100). '
-                '12 gaps filled with real data from the nearest available WB survey year '
-                'or Eurostat EU-SILC (Hungary 2018-2023, where WB coverage ends). '
-                'No imputation used - all values from primary sources.',
+                html.B('Gini Index (income inequality, 0-100): '),
+                'Primary source: OECD Income Distribution Database '
+                '(closest-year matching to ESS rounds). '
+                'Supplemented for Ireland (IE) with Eurostat EU-SILC, '
+                'and for all remaining 22 countries with '
+                html.B('World Bank Development Indicators (SI.POV.GINI)'), ', '
+                'which uses Eurostat EU-SILC as the underlying source for EU/EEA members '
+                'and national household surveys for others. '
+                'All values are observed survey data - no imputation. '
+                'Kosovo (XK) unemployment is unavailable (no ILO estimate published).',
             ], className='lp-li', style={'margin-bottom': '5px'}),
             html.Li([
-                html.B('Unemployment Rate: '),
-                'World Bank World Development Indicators '
-                '(SL.UEM.TOTL.ZS - ILO modelled estimates, % of labour force). '
-                'For the Parallel Coordinates tab: OECD harmonized rates are used '
-                'instead, supplemented with Eurostat for Ireland and OECD separately '
-                'for Switzerland.',
+                html.B('Unemployment Rate (% of labour force): '),
+                'Primary source: OECD harmonized unemployment rates '
+                '(supplemented with OECD data for Switzerland). '
+                'For the 22 additional countries not covered by the OECD file: '
+                html.B('World Bank / ILO modelled estimates (SL.UEM.TOTL.ZS)'), '. '
+                'OECD harmonized and ILO modelled estimates use the same ILO '
+                'definition but differ slightly in methodology.',
             ], className='lp-li', style={'margin-bottom': '5px'}),
             html.Li([
                 html.B('GDP per Capita (PPP): '),
