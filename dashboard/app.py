@@ -857,10 +857,27 @@ tab2 = html.Div([
         ], className='sidebar'),
 
         html.Div([
+            html.Button(
+                '⤢ Fullscreen',
+                id='t2vs-expand-btn',
+                n_clicks=0,
+                className='scatter-expand-btn',
+            ),
             dcc.Graph(id='t2vs-graph', config={'displayModeBar': False}),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
+
+    # ── Fullscreen overlay ──────────────────────────────────────────────────────
+    html.Div([
+        html.Div([
+            html.Button('✕', id='t2vs-close-btn', n_clicks=0,
+                        className='scatter-overlay-close'),
+            dcc.Graph(id='t2vs-overlay-graph',
+                      config={'displayModeBar': True, 'scrollZoom': True}),
+        ], className='scatter-overlay-inner'),
+    ], id='t2vs-overlay', className='scatter-overlay', style={'display': 'none'}),
+
 ], className='tab-content')
 
 
@@ -1362,6 +1379,56 @@ def update_value_space(year, n_clusters, dim_group):
     )
     summary = _make_cluster_summary(result, n_clusters)
     return fig, summary
+
+
+# Tab 2 - Value Space: show / hide fullscreen overlay (clientside, no server trip)
+app.clientside_callback(
+    """
+    function(n_open, n_close) {
+        const ctx = window.dash_clientside.callback_context;
+        if (!ctx || !ctx.triggered || !ctx.triggered.length)
+            return window.dash_clientside.no_update;
+        const src = ctx.triggered[0].prop_id.split('.')[0];
+        return src === 't2vs-expand-btn'
+            ? {display: 'flex'}
+            : {display: 'none'};
+    }
+    """,
+    Output('t2vs-overlay', 'style'),
+    Input('t2vs-expand-btn', 'n_clicks'),
+    Input('t2vs-close-btn',  'n_clicks'),
+    prevent_initial_call=True,
+)
+
+
+# Tab 2 - Value Space: overlay figure (larger, generated on demand)
+@app.callback(
+    Output('t2vs-overlay-graph', 'figure'),
+    Input('t2vs-expand-btn', 'n_clicks'),
+    State('t2vs-year',      'value'),
+    State('t2vs-clusters',  'value'),
+    State('t2vs-dim-group', 'value'),
+    prevent_initial_call=True,
+)
+def update_value_space_overlay(_, year, n_clusters, dim_group):
+    group  = dp.DIMENSION_GROUPS.get(dim_group, dp.DIMENSION_GROUPS['values'])
+    source = group['source']
+    src_df = {'df_main': DF, 'df_scatter': DF_SCATTER,
+              'df_gov_exp': DF_GOV_EXP}.get(source, DF)
+
+    result, explained, pc1_label, pc2_label = dp.compute_pca_clustering(
+        src_df, year, n_clusters, dim_group=dim_group,
+    )
+    fig = make_value_space_figure(
+        result, explained, pc1_label, pc2_label,
+        year, n_clusters,
+        data_cols=group['cols'],
+        spoke_labels=group['spoke_labels'],
+        dim_group_label=group['label'],
+    )
+    # Override height for the larger overlay view
+    fig.update_layout(height=800)
+    return fig
 
 
 # Tab 3 - Parallel Coordinates (IQR band profile)
