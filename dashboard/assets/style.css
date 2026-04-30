@@ -116,6 +116,25 @@ body {
 /* Vertical slider (Tab 1 and Tab 3 left panel) */
 .tab1-slider { margin-left: 8px; }
 
+/* Horizontal year slider — blue handle + track */
+.year-slider .rc-slider-handle {
+  border-color: #1a5fb4;
+  background-color: #1a5fb4;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  opacity: 1;
+}
+.year-slider .rc-slider-handle:hover,
+.year-slider .rc-slider-handle:active {
+  border-color: #1145a0;
+  background-color: #1145a0;
+  box-shadow: 0 0 0 4px rgba(26,95,180,0.18);
+}
+.year-slider .rc-slider-track {
+  background-color: #b8cde8;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn-sm {
   padding: 4px 10px;

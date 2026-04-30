@@ -628,8 +628,7 @@ tab1 = html.Div([
         ], className='sidebar'),
 
         html.Div([
-            _expandable_graph('t1-radar',
-                              extra_children=[html.Div(id='t1-country-info')]),
+            _expandable_graph('t1-radar'),
             html.Div([
                 _ctrl_label('ESS Round'),
                 dcc.Slider(
@@ -638,8 +637,10 @@ tab1 = html.Div([
                     marks={},
                     value=DEFAULT_YEAR, included=False,
                     updatemode='drag',
+                    className='year-slider',
                 ),
             ], style={'padding': '6px 20px 12px'}),
+            html.Div(id='t1-country-info'),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
@@ -817,6 +818,7 @@ tab2 = html.Div([
                     marks=all_year_marks(),
                     value=DEFAULT_YEAR, included=False,
                     updatemode='drag',
+                    className='year-slider',
                 ),
             ], style={'padding': '6px 20px 12px'}),
         ], className='main-content'),
