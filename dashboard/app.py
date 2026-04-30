@@ -170,9 +170,18 @@ def _register_expand_callbacks(app_ref, graph_id: str) -> None:
         Input(f'{graph_id}-close-btn',  'n_clicks'),
         prevent_initial_call=True,
     )
-    # 2. Copy figure from main graph to overlay graph (no server trip)
+    # 2. Copy figure to overlay, resizing to 75% of window height (no server trip)
     app_ref.clientside_callback(
-        "function(n, fig) { return fig; }",
+        """
+        function(n, fig) {
+            if (!fig || !n) return window.dash_clientside.no_update;
+            var f = JSON.parse(JSON.stringify(fig));
+            f.layout = f.layout || {};
+            f.layout.height = Math.max(500, Math.floor(window.innerHeight * 0.78));
+            f.layout.autosize = true;
+            return f;
+        }
+        """,
         Output(f'{graph_id}-overlay-graph', 'figure'),
         Input(f'{graph_id}-expand-btn', 'n_clicks'),
         State(graph_id, 'figure'),
@@ -816,7 +825,7 @@ tab_corr = html.Div([
                 style={'font-size': '11px', 'color': '#7a90b0',
                        'margin': '0 0 4px', 'text-align': 'right'},
             ),
-            _expandable_graph('tc-heatmap'),
+            dcc.Graph(id='tc-heatmap', config={'displayModeBar': False}),
             # Scatter detail - updates when a cell is clicked or dropdowns change
             html.Div(id='tc-scatter-wrap', children=[
                 html.Hr(style={'border': 'none', 'border-top': '1px solid #d8e0ea',
@@ -1285,7 +1294,7 @@ def update_t1_info(country):
     Input('tc-overlay-close', 'n_clicks'),
     prevent_initial_call=True,
 )
-def toggle_scatter_overlay(open_n, close_n):
+def toggle_scatter_overlay(_open, _close):
     if ctx.triggered_id == 'tc-expand-btn':
         return {'display': 'flex'}
     return {'display': 'none'}
@@ -1305,8 +1314,7 @@ def update_scatter_full(_, year, x_col, y_col):
         fig = make_scatter_all(DF_SCATTER, x_col, year=year)
     else:
         fig = make_scatter_single(DF_SCATTER, x_col, y_col, year=year)
-    # Increase height for fullscreen view
-    fig.update_layout(height=700)
+    fig.update_layout(height=820)
     return fig
 
 
@@ -1435,11 +1443,7 @@ def update_value_space(year, n_clusters, dim_group):
 # ── Fullscreen expand callbacks — registered for every expandable graph ────────
 for _gid in ('t1-radar', 't2vs-graph', 't3-parallel'):
     _register_expand_callbacks(app, _gid)
-
-# tc-heatmap uses the helper pattern too
-_register_expand_callbacks(app, 'tc-heatmap')
-
-# tc-scatter already has hand-written callbacks in this file (kept as-is)
+# tc-scatter and tc-heatmap use hand-written callbacks below
 
 
 # Tab 3 - Parallel Coordinates (IQR band profile)
