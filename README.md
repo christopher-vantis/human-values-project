@@ -14,12 +14,13 @@ The Schwartz model proposes that 10 basic human values - arranged in a circular 
 
 | Tab | What you see |
 |-----|-------------|
-| **About** | Theory background, dataset documentation, and how to read the charts |
-| **Country Profile** | Radar chart of one country's value profile for a selected ESS round |
-| **Correlations** | Scatter plots: country-level predictors vs. Schwartz higher-order dimensions, with OLS regression and 95 % CI bands |
-| **Value Space** | PCA projection of all 39 countries into 2D by value similarity, with K-Means clustering |
-| **Individual Profiles** | Parallel coordinates: 1 200 sampled ESS respondents coloured by dominant value dimension |
-| **Parallel Coordinates** | Country × round lines across Schwartz dimensions and macro indicators |
+| **About** | Theory background, dataset documentation, data source coverage, and methodological limitations |
+| **Country Profile** | Radar chart of one country's Schwartz value profile for a selected ESS round, plus a country facts card and 12 structural indicators (democracy, inequality, health, education, gender equality, and more) |
+| **Correlations** | Correlation heatmap overview across all predictors and Schwartz dimensions; click any cell to drill into a scatter plot with OLS regression line and 95 % CI band |
+| **Value Space** | Countries projected into 2D by profile similarity (PCA + K-Means), switchable across value profiles, macro indicators, and government spending dimensions |
+| **Parallel Coordinates** | 1 200 sampled ESS respondents coloured by dominant Schwartz dimension across 11 attitude axes; filter by dragging on any axis |
+
+Each tab has a dedicated **Info** button in the sidebar with notes on the analytical approach and units of analysis.
 
 ---
 
@@ -48,7 +49,7 @@ python app.py
 
 Open [http://localhost:8050](http://localhost:8050) in your browser.
 
-> **Note for developers with raw ESS data:** If you have the original ESS CSV files and external macro datasets, place them under `data/raw/` and run `python export_precomputed.py` to regenerate the derived datasets.
+> **Note for developers with raw ESS data:** If you have the original ESS CSV files and external macro datasets, place them under `data/raw/` and run `python dashboard/export_precomputed.py` from the project root to regenerate the derived datasets.
 
 ---
 
@@ -58,12 +59,40 @@ Open [http://localhost:8050](http://localhost:8050) in your browser.
 |------|--------|
 | Value survey (PVQ-21) | [European Social Survey](https://www.europeansocialsurvey.org), Rounds 1–11, 2002–2023 |
 | Liberal Democracy Index | [V-Dem Project](https://v-dem.net), Country-Year Dataset v15 |
-| Gini Index | [World Bank WDI](https://data.worldbank.org/indicator/SI.POV.GINI) (SI.POV.GINI); gaps filled from [Eurostat EU-SILC](https://ec.europa.eu/eurostat) |
+| Gini Index | [World Bank WDI](https://data.worldbank.org/indicator/SI.POV.GINI) (SI.POV.GINI) + [Eurostat EU-SILC](https://ec.europa.eu/eurostat) |
 | Unemployment | [World Bank WDI](https://data.worldbank.org/indicator/SL.UEM.TOTL.ZS) (SL.UEM.TOTL.ZS) |
 | GDP per Capita (PPP) | [World Bank WDI](https://data.worldbank.org/indicator/NY.GDP.PCAP.PP.KD) (NY.GDP.PCAP.PP.KD) |
-| Government Expenditure | [Eurostat COFOG](https://ec.europa.eu/eurostat/statistics-explained/index.php/Government_expenditure_by_function_%E2%80%93_COFOG) |
+| GDP per Capita (PPS) | [Eurostat](https://ec.europa.eu/eurostat) (tec00114) |
+| Government Expenditure | [Eurostat COFOG](https://ec.europa.eu/eurostat) (gov_10a_exp) + World Bank (health, education, defence for non-EU) |
+| Healthy Life Years | [Eurostat](https://ec.europa.eu/eurostat) (hlth_hlye) |
+| Tertiary Education Attainment | [Eurostat](https://ec.europa.eu/eurostat) (edat_lfse_03) |
+| Gender Equality Index | [EIGE](https://eige.europa.eu/gender-equality-index), EU27 member states |
+| Trade Union Density | [OECD](https://stats.oecd.org) Labour Statistics |
+| Corruption Perceptions Index | [Transparency International](https://www.transparency.org/en/cpi) |
+| World Happiness Score | [World Happiness Report](https://worldhappiness.report) (Cantril Ladder) via Our World in Data |
 
-**ESS data note:** The raw ESS microdata files are not included in this repository in accordance with the [ESS terms of use](https://www.europeansocialsurvey.org/data/conditions_of_use.html). The `precomputed/` folder contains only anonymised, aggregated derivatives.
+**ESS data note:** Raw ESS microdata files are not included in this repository in accordance with the [ESS terms of use](https://www.europeansocialsurvey.org/data/conditions_of_use.html). The `precomputed/` folder contains only anonymised, aggregated derivatives.
+
+---
+
+## Project structure
+
+```
+dashboard/
+  app.py              # Entry point: data loading, app init, all callbacks
+  layouts.py          # Static layout objects and pure UI helpers
+  data_pipeline.py    # Data loading, aggregation, PCA/clustering
+  build_indicators.py # Fetch 12 structural indicators from external APIs
+  build_gov_exp.py    # Build government expenditure dataset (Eurostat + World Bank)
+  export_precomputed.py
+  figures/
+    radar.py          # Schwartz radar charts
+    scatter.py        # Correlation scatter + heatmap
+    parallel.py       # Parallel coordinates
+    value_space.py    # PCA value space with radar glyphs
+  precomputed/        # Cached CSVs deployed to server (no raw data needed)
+  assets/style.css
+```
 
 ---
 
