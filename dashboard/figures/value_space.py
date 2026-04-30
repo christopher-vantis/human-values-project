@@ -50,9 +50,9 @@ def _hull_traces(result):
 def _glyph_traces(result, glyph_size, max_abs, data_cols):
     """One closed radar polygon per country for an arbitrary set of data columns.
 
-    NaN spokes are skipped - only valid data points are connected, so countries
-    with partial COFOG coverage still show a proper (partial) polygon instead
-    of lines collapsing to the glyph centre.
+    max_abs may be a float (global normalisation) or a dict {col: max_val}
+    (per-column normalisation). NaN spokes are skipped so countries with
+    partial data still produce a valid polygon.
     """
     traces = []
     n = len(data_cols)
@@ -69,7 +69,8 @@ def _glyph_traces(result, glyph_size, max_abs, data_cols):
                 v = np.nan
             if np.isnan(v):
                 continue  # skip missing spokes - don't collapse to centre
-            delta_norm = v / max_abs if max_abs > 0 else 0
+            col_max = max_abs[col] if isinstance(max_abs, dict) else max_abs
+            delta_norm = v / col_max if col_max > 0 else 0
             angle = math.pi / 2 - 2 * math.pi * i / n
             xs.append(cx + glyph_size * delta_norm * math.cos(angle))
             ys.append(cy + glyph_size * delta_norm * math.sin(angle))
@@ -171,11 +172,15 @@ def make_value_space_figure(result, explained, pc1_label, pc2_label,
                           margin=dict(t=60, l=80, r=40, b=60))
         return fig
 
-    # Normalise glyph values across the available data columns
+    # Per-column normalisation: each spoke is scaled to its own max across
+    # countries. This prevents variables on very different scales (e.g.
+    # gov_exp_social ~20 % vs gov_exp_defence ~1 %) from making all other
+    # spokes look like hairlines.
     avail = [c for c in data_cols if c in result.columns]
-    max_abs = float(result[avail].abs().max().max()) if avail else 1.0
-    if max_abs == 0:
-        max_abs = 1.0
+    max_abs_per_col = {}
+    for c in avail:
+        col_max = float(result[c].abs().max())
+        max_abs_per_col[c] = col_max if col_max > 0 else 1.0
 
     x_span = float(result['pc1'].max() - result['pc1'].min())
     y_span = float(result['pc2'].max() - result['pc2'].min())
@@ -184,7 +189,7 @@ def make_value_space_figure(result, explained, pc1_label, pc2_label,
     fig = go.Figure()
     for t in _hull_traces(result):
         fig.add_trace(t)
-    for t in _glyph_traces(result, glyph_size, max_abs, avail):
+    for t in _glyph_traces(result, glyph_size, max_abs_per_col, avail):
         fig.add_trace(t)
     for t in _label_traces(result):
         fig.add_trace(t)

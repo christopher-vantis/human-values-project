@@ -470,31 +470,31 @@ landing = html.Div([
                 'sector S13 general government). Covers GF01-GF10 all COFOG functions.',
             ], className='lp-li', style={'margin-bottom': '6px'}),
             html.Li([
-                html.B('Non-EU countries — Health: '),
-                'World Bank Development Indicators SH.XPD.GHED.GD.ZS '
-                '(domestic general government health expenditure % GDP). '
-                'Covers GB, AL, ME, MK, RS, RU, TR, UA (38/39 total; Kosovo unavailable).',
+                html.B('Non-EU countries — Health (GF07): '),
+                'World Bank SH.XPD.GHED.GD.ZS (domestic general government health '
+                'expenditure % GDP), supplemented by temporal interpolation within '
+                'each country\'s time series. '
+                '38 / 39 countries; Kosovo (XK) unavailable in international databases.',
             ], className='lp-li', style={'margin-bottom': '6px'}),
             html.Li([
-                html.B('Non-EU countries — Education: '),
-                'World Bank SE.XPD.TOTL.GD.ZS. '
-                'Covers GB, AL, IL, MK, RS, RU, TR, UA (37/39; ME and Kosovo unavailable).',
+                html.B('Non-EU countries — Education (GF09): '),
+                'World Bank SE.XPD.TOTL.GD.ZS, supplemented by temporal carry. '
+                '37 / 39 countries; Montenegro (ME) and Kosovo (XK) unavailable.',
             ], className='lp-li', style={'margin-bottom': '6px'}),
             html.Li([
-                html.B('Non-EU countries — Defence: '),
+                html.B('Non-EU countries — Defence (GF02): '),
                 'World Bank MS.MIL.XPND.GD.ZS (military expenditure % GDP). '
-                'Full coverage 39/39.',
+                'Full coverage: 39 / 39.',
             ], className='lp-li', style={'margin-bottom': '6px'}),
             html.Li([
-                html.B('Non-EU countries — Social Protection: '),
-                'World Bank SP.SPD.TOTL.GD.ZS. '
-                'Covers GB, AL, IL, MK, RU, RS, TR (29/39; '
-                'ME, UA, XK unavailable).',
-            ], className='lp-li', style={'margin-bottom': '6px'}),
-            html.Li([
-                html.B('Economic affairs (GF04), public services (GF01), '
-                       'culture (GF08): '),
-                'Eurostat only (29/39). No equivalent World Bank indicator available.',
+                html.B('Social Protection (GF10), Economic Affairs (GF04), '
+                       'Public Services (GF01), Culture (GF08): '),
+                'Eurostat gov_10a_exp only — 29 EU / EEA countries. '
+                'The 10 non-EU / non-EEA countries (GB, IL, TR, UA, RU, RS, AL, ME, MK, XK) '
+                'have no social protection or economic affairs data in any freely accessible '
+                'international database (OECD SOCX, IMF GFS, and World Bank SP.SPD.TOTL.GD.ZS '
+                'either lack coverage or are not publicly queryable via API). '
+                'Glyphs for these countries show partial polygons (health + education + defence).',
             ], className='lp-li'),
         ], className='lp-ul'),
     ], className='lp-section'),
