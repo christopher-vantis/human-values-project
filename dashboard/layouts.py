@@ -596,15 +596,6 @@ tab1 = html.Div([
                 className='ctrl-dropdown',
             ),
             html.Div(style={'height': '14px'}),
-            _ctrl_label('ESS Round'),
-            dcc.Slider(
-                id='t1-year',
-                min=min(_ALL_YEARS), max=max(_ALL_YEARS), step=None,
-                marks={},           # filled by update_t1_slider callback on load
-                value=DEFAULT_YEAR, included=False,
-                className='tab1-slider', vertical=True, verticalHeight=320,
-            ),
-            html.Div(style={'height': '16px'}),
             html.Div([
                 html.P('Higher-order dimensions:', className='ctrl-label',
                        style={'margin-bottom': '6px'}),
@@ -613,7 +604,7 @@ tab1 = html.Div([
             _interaction_box([
                 'Hover spoke points to see value name & Δ-score',
                 'Select a country from the dropdown',
-                'Drag the slider to change ESS round',
+                'Slide the year bar below the chart — updates live',
             ]),
             _method_panel('t1-method-btn', 't1-method-content', [
                 ('Δ-scores',
@@ -639,6 +630,16 @@ tab1 = html.Div([
         html.Div([
             _expandable_graph('t1-radar',
                               extra_children=[html.Div(id='t1-country-info')]),
+            html.Div([
+                _ctrl_label('ESS Round'),
+                dcc.Slider(
+                    id='t1-year',
+                    min=min(_ALL_YEARS), max=max(_ALL_YEARS), step=None,
+                    marks={},
+                    value=DEFAULT_YEAR, included=False,
+                    updatemode='drag',
+                ),
+            ], style={'padding': '6px 20px 12px'}),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
@@ -774,15 +775,6 @@ tab2 = html.Div([
                 'font-size': '10.5px', 'color': _MUTED, 'line-height': '1.45',
                 'margin': '6px 0 10px', 'font-style': 'italic',
             }),
-            _ctrl_label('ESS Round'),
-            dcc.Slider(
-                id='t2vs-year',
-                min=min(_ALL_YEARS), max=max(_ALL_YEARS), step=None,
-                marks=all_year_marks(),
-                value=DEFAULT_YEAR, included=False,
-                className='tab1-slider', vertical=True, verticalHeight=240,
-            ),
-            html.Div(style={'height': '18px'}),
             _ctrl_label('Number of Clusters'),
             dcc.Slider(id='t2vs-clusters', min=2, max=6, step=1, value=3,
                        marks={i: str(i) for i in range(2, 7)}, included=False),
@@ -792,7 +784,7 @@ tab2 = html.Div([
                 'Switch the Dimension dropdown to compare different profiles',
                 'Hover over a country point for variable details',
                 'Adjust the cluster slider to change group count',
-                'Use the year slider to explore change over time',
+                'Slide the year bar below the chart — updates live',
             ]),
             _method_panel('t2-method-btn', 't2-method-content', [
                 ('PCA similarity space',
@@ -817,6 +809,16 @@ tab2 = html.Div([
 
         html.Div([
             _expandable_graph('t2vs-graph'),
+            html.Div([
+                _ctrl_label('ESS Round'),
+                dcc.Slider(
+                    id='t2vs-year',
+                    min=min(_ALL_YEARS), max=max(_ALL_YEARS), step=None,
+                    marks=all_year_marks(),
+                    value=DEFAULT_YEAR, included=False,
+                    updatemode='drag',
+                ),
+            ], style={'padding': '6px 20px 12px'}),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
