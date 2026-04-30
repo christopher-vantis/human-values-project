@@ -48,7 +48,12 @@ def _hull_traces(result):
 
 
 def _glyph_traces(result, glyph_size, max_abs, data_cols):
-    """One closed radar polygon per country for an arbitrary set of data columns."""
+    """One closed radar polygon per country for an arbitrary set of data columns.
+
+    NaN spokes are skipped - only valid data points are connected, so countries
+    with partial COFOG coverage still show a proper (partial) polygon instead
+    of lines collapsing to the glyph centre.
+    """
     traces = []
     n = len(data_cols)
     for _, row in result.iterrows():
@@ -57,11 +62,20 @@ def _glyph_traces(result, glyph_size, max_abs, data_cols):
 
         xs, ys = [], []
         for i, col in enumerate(data_cols):
-            v = float(row[col]) if col in row.index and not np.isnan(float(row[col])) else 0.0
+            raw = row[col] if col in row.index else np.nan
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                v = np.nan
+            if np.isnan(v):
+                continue  # skip missing spokes - don't collapse to centre
             delta_norm = v / max_abs if max_abs > 0 else 0
             angle = math.pi / 2 - 2 * math.pi * i / n
             xs.append(cx + glyph_size * delta_norm * math.cos(angle))
             ys.append(cy + glyph_size * delta_norm * math.sin(angle))
+
+        if len(xs) < 2:
+            continue  # not enough valid spokes to draw anything meaningful
 
         xs.append(xs[0])
         ys.append(ys[0])
