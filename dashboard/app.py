@@ -753,11 +753,32 @@ tab_corr = html.Div([
             html.Div(id='tc-scatter-wrap', children=[
                 html.Hr(style={'border': 'none', 'border-top': '1px solid #d8e0ea',
                                'margin': '6px 0 2px'}),
+                html.Button('⤢ Fullscreen', id='tc-expand-btn',
+                            n_clicks=0, className='scatter-expand-btn'),
                 dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
             ]),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
+
+    # Fullscreen overlay (hidden by default)
+    html.Div(
+        id='tc-overlay',
+        className='scatter-overlay',
+        style={'display': 'none'},
+        children=[
+            html.Div([
+                html.Button('✕', id='tc-overlay-close', n_clicks=0,
+                            className='scatter-overlay-close'),
+                dcc.Graph(id='tc-scatter-full',
+                          config={'displayModeBar': True,
+                                  'modeBarButtonsToRemove': [
+                                      'sendDataToCloud', 'editInChartStudio',
+                                      'lasso2d', 'select2d',
+                                  ]}),
+            ], className='scatter-overlay-inner'),
+        ],
+    ),
 ], className='tab-content')
 
 
@@ -1187,6 +1208,38 @@ def update_t1_info(country):
     })
 
     return html.Div([facts_card, ind_block])
+
+
+# Tab Corr - fullscreen overlay toggle
+@app.callback(
+    Output('tc-overlay', 'style'),
+    Input('tc-expand-btn',    'n_clicks'),
+    Input('tc-overlay-close', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def toggle_scatter_overlay(open_n, close_n):
+    if ctx.triggered_id == 'tc-expand-btn':
+        return {'display': 'flex'}
+    return {'display': 'none'}
+
+
+# Tab Corr - fullscreen scatter (same inputs as main scatter but taller)
+@app.callback(
+    Output('tc-scatter-full', 'figure'),
+    Input('tc-expand-btn', 'n_clicks'),
+    State('tc-round', 'value'),
+    State('tc-x-var',  'value'),
+    State('tc-y-var',  'value'),
+    prevent_initial_call=True,
+)
+def update_scatter_full(_, year, x_col, y_col):
+    if y_col == 'all':
+        fig = make_scatter_all(DF_SCATTER, x_col, year=year)
+    else:
+        fig = make_scatter_single(DF_SCATTER, x_col, y_col, year=year)
+    # Increase height for fullscreen view
+    fig.update_layout(height=700)
+    return fig
 
 
 # Tab Corr - heatmap (updates when round changes)
