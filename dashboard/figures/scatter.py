@@ -139,6 +139,87 @@ def _add_scatter_to(fig, df: pd.DataFrame, x_col: str, y_col: str,
     return reg
 
 
+def make_corr_heatmap(df: pd.DataFrame, year) -> go.Figure:
+    """Correlation heatmap: all X predictors × 4 Schwartz dimensions.
+
+    Cells show Pearson r with significance stars. Clicking a cell sets the
+    x-var / y-var selectors and jumps to the scatter detail.
+    """
+    sub = _prepare(df, year)
+
+    x_cols   = [col for col, _, _ in SCATTER_X_META]
+    x_labels = [lbl for _, lbl, _ in SCATTER_X_META]
+    y_cols   = [col for col, _, _ in SCATTER_Y_META]
+    y_labels = [lbl for _, lbl, _ in SCATTER_Y_META]
+
+    z, text_mat, hover_mat = [], [], []
+    for x_col, x_lbl in zip(x_cols, x_labels):
+        row_z, row_t, row_h = [], [], []
+        for y_col, y_lbl in zip(y_cols, y_labels):
+            xv = sub[x_col].values.astype(float) if x_col in sub.columns else np.array([])
+            yv = sub[y_col].values.astype(float) if y_col in sub.columns else np.array([])
+            reg = _regress_ci(xv, yv, n_pts=2)
+            if reg and reg['n'] >= 5:
+                sig  = _sig_label(reg['p'])
+                row_z.append(reg['r'])
+                row_t.append(f"{reg['r']:+.2f}{sig}" if sig else f"{reg['r']:+.2f}")
+                row_h.append(
+                    f"<b>{x_lbl}</b> x <b>{y_lbl}</b><br>"
+                    f"r = {reg['r']:+.3f}{sig}   p = {reg['p']:.3f}   N = {reg['n']}"
+                )
+            else:
+                row_z.append(None)
+                row_t.append('n/a')
+                row_h.append(f"<b>{x_lbl}</b> x <b>{y_lbl}</b><br>Insufficient data")
+        z.append(row_z)
+        text_mat.append(row_t)
+        hover_mat.append(row_h)
+
+    colorscale = [
+        [0.00, '#2166ac'],
+        [0.25, '#92c5de'],
+        [0.50, '#f7f7f7'],
+        [0.75, '#f4a582'],
+        [1.00, '#d6604d'],
+    ]
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=y_labels,
+        y=x_labels,
+        text=text_mat,
+        customdata=hover_mat,
+        texttemplate='%{text}',
+        textfont=dict(size=10, color='#1a2840'),
+        colorscale=colorscale,
+        zmid=0, zmin=-1, zmax=1,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text='Pearson r', side='right'),
+            thickness=12, len=0.7, tickfont=dict(size=9),
+        ),
+        hovertemplate='%{customdata}<extra></extra>',
+    ))
+
+    fig.update_layout(
+        paper_bgcolor=BG_COLOR,
+        plot_bgcolor=BG_COLOR,
+        height=560,
+        margin=dict(t=30, b=10, l=220, r=60),
+        xaxis=dict(
+            side='top',
+            tickfont=dict(size=11, color='#1a2840'),
+            tickangle=0,
+        ),
+        yaxis=dict(
+            autorange='reversed',
+            tickfont=dict(size=10, color='#1a2840'),
+        ),
+        hoverlabel=dict(bgcolor='white', font_size=12),
+    )
+    return fig
+
+
 def _prepare(df: pd.DataFrame, year) -> pd.DataFrame:
     """Filter to one ESS round or aggregate country means across all rounds."""
     if year == 'all':

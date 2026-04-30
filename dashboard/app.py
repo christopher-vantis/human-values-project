@@ -4,13 +4,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from dash import Dash, dcc, html, Input, Output, State, ctx
+from dash.exceptions import PreventUpdate
 import pandas as pd
 
 import data_pipeline as dp
 from figures.radar       import make_radar_single
 from figures.parallel    import make_parallel, make_country_legend, make_parallel_micro
 from figures.value_space import make_value_space_figure, CLUSTER_COLORS
-from figures.scatter     import make_scatter_single, make_scatter_all
+from figures.scatter     import make_scatter_single, make_scatter_all, make_corr_heatmap
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 DF          = dp.load_data()
@@ -707,7 +708,19 @@ tab_corr = html.Div([
         ], className='sidebar'),
 
         html.Div([
-            dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
+            # Heatmap overview - always visible, click to drill in
+            html.P(
+                'Click any cell to jump to the scatter detail below.',
+                style={'font-size': '11px', 'color': '#7a90b0',
+                       'margin': '0 0 4px', 'text-align': 'right'},
+            ),
+            dcc.Graph(id='tc-heatmap', config={'displayModeBar': False}),
+            # Scatter detail - updates when a cell is clicked or dropdowns change
+            html.Div(id='tc-scatter-wrap', children=[
+                html.Hr(style={'border': 'none', 'border-top': '1px solid #d8e0ea',
+                               'margin': '6px 0 2px'}),
+                dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
+            ]),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
@@ -1120,6 +1133,39 @@ def update_t1_info(country):
     })
 
     return html.Div([facts_card, ind_block])
+
+
+# Tab Corr - heatmap (updates when round changes)
+@app.callback(
+    Output('tc-heatmap', 'figure'),
+    Input('tc-round', 'value'),
+)
+def update_heatmap(year):
+    return make_corr_heatmap(DF_SCATTER, year)
+
+
+# Tab Corr - click on heatmap cell → update variable dropdowns
+@app.callback(
+    Output('tc-x-var', 'value'),
+    Output('tc-y-var', 'value'),
+    Input('tc-heatmap', 'clickData'),
+    prevent_initial_call=True,
+)
+def heatmap_click(click_data):
+    if not click_data:
+        raise PreventUpdate
+    pt = click_data['points'][0]
+    # x = dim label, y = x-var label
+    dim_lbl  = pt.get('x', '')
+    xvar_lbl = pt.get('y', '')
+    # Reverse-map labels to column names
+    _lbl_to_x = {lbl: col for col, lbl, _ in dp.SCATTER_X_META}
+    _lbl_to_y = {lbl: col for col, lbl, _ in dp.SCATTER_Y_META}
+    x_col = _lbl_to_x.get(xvar_lbl)
+    y_col = _lbl_to_y.get(dim_lbl)
+    if not x_col or not y_col:
+        raise PreventUpdate
+    return x_col, y_col
 
 
 # Tab Corr - Correlations
