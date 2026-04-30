@@ -830,9 +830,11 @@ tab_corr = html.Div([
             html.Div(id='tc-scatter-wrap', children=[
                 html.Hr(style={'border': 'none', 'border-top': '1px solid #d8e0ea',
                                'margin': '6px 0 2px'}),
-                html.Button('', id='tc-expand-btn', n_clicks=0,
-                            className='chart-expand-btn', title='Fullscreen'),
-                dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
+                html.Div([
+                    html.Button('', id='tc-expand-btn', n_clicks=0,
+                                className='chart-expand-btn', title='Fullscreen'),
+                    dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
+                ], style={'position': 'relative'}),
             ]),
         ], className='main-content'),
 
