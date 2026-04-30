@@ -236,13 +236,13 @@ SCATTER_X_META = [
     ('wb_gini',               'Gini Index',              'World Bank GINI index (0-100)'),
     ('wb_unemployment',       'Unemployment (%)',        'World Bank unemployment rate (% of labour force)'),
     ('wb_gdp_per_capita_ppp', 'GDP per Capita (PPP)',    'World Bank GDP/cap, PPP, constant 2017 int\'l $'),
-    ('gov_exp_health',           'Gov. Health Exp.',            'COFOG: health (% of total gov. spending)'),
-    ('gov_exp_education',        'Gov. Education Exp.',         'COFOG: education (% of total gov. spending)'),
-    ('gov_exp_social',           'Gov. Social Exp.',            'COFOG: social protection (% of total gov. spending)'),
-    ('gov_exp_defence',          'Gov. Defence Exp.',           'COFOG: defence (% of total gov. spending)'),
-    ('gov_exp_economic',         'Gov. Economic Exp.',          'COFOG: economic affairs (% of total gov. spending)'),
-    ('gov_exp_public_services',  'Gov. Public Services Exp.',   'COFOG: general public services (% of total gov. spending)'),
-    ('gov_exp_culture',          'Gov. Culture & Recreation Exp.', 'COFOG: recreation, culture and religion (% of total gov. spending)'),
+    ('gov_exp_health',           'Gov. Health Exp.',            'COFOG GF07: health (% of GDP)'),
+    ('gov_exp_education',        'Gov. Education Exp.',         'COFOG GF09: education (% of GDP)'),
+    ('gov_exp_social',           'Gov. Social Exp.',            'COFOG GF10: social protection (% of GDP)'),
+    ('gov_exp_defence',          'Gov. Defence Exp.',           'COFOG GF02: defence (% of GDP)'),
+    ('gov_exp_economic',         'Gov. Economic Exp.',          'COFOG GF04: economic affairs (% of GDP)'),
+    ('gov_exp_public_services',  'Gov. Public Services Exp.',   'COFOG GF01: general public services (% of GDP)'),
+    ('gov_exp_culture',          'Gov. Culture & Recreation Exp.', 'COFOG GF08: recreation, culture and religion (% of GDP)'),
 ]
 
 # Rich display metadata for the sidebar (source, question wording, scale, aggregation)
@@ -809,6 +809,66 @@ def _load_micro() -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+# ── Government spending (COFOG) ────────────────────────────────────────────────
+# Columns available in df_gov_exp (% of GDP)
+GOV_EXP_COLS = [
+    'gov_exp_health', 'gov_exp_education', 'gov_exp_social',
+    'gov_exp_defence', 'gov_exp_economic', 'gov_exp_public_services',
+    'gov_exp_culture',
+]
+
+# ── Value Space dimension groups ───────────────────────────────────────────────
+# Each group defines the column set used for PCA + K-Means in the Value Space tab.
+# 'source': which precomputed DataFrame the columns come from.
+# 'spoke_labels': display names for the glyph spokes (same order as cols).
+DIMENSION_GROUPS: dict[str, dict] = {
+    'values': {
+        'label':        'Value Orientations',
+        'desc':         '10 Schwartz basic value Δ-scores (deviation from country mean). '
+                        'Captures what people prioritise relative to their own cultural baseline.',
+        'cols':         [f'd_{k}' for k in VALUE_KEYS],
+        'spoke_labels': ['Self-Dir.', 'Universalism', 'Benevolence', 'Tradition',
+                         'Conformity', 'Security', 'Power', 'Achievement',
+                         'Hedonism', 'Stimulation'],
+        'source':       'df_main',
+        'year_slider':  True,
+    },
+    'attitudes': {
+        'label':        'Social Attitudes',
+        'desc':         'Country means of six ESS attitude variables: interpersonal trust, '
+                        'religiosity, left-right self-placement, perceived safety, '
+                        'urbanisation rate, and mean age.',
+        'cols':         ['trust_mean', 'religiosity_mean', 'lrscale_mean',
+                         'safety_mean', 'urban_pct', 'age_mean'],
+        'spoke_labels': ['Trust', 'Religiosity', 'Left-Right', 'Safety',
+                         'Urban %', 'Mean Age'],
+        'source':       'df_scatter',
+        'year_slider':  True,
+    },
+    'economy': {
+        'label':        'Economic Structure',
+        'desc':         'Five macro-economic indicators: GDP per capita (PPP), '
+                        'income inequality (Gini), unemployment rate, migration '
+                        'background share, and mean years of education.',
+        'cols':         ['wb_gdp_per_capita_ppp', 'wb_gini', 'wb_unemployment',
+                         'diversity_pct', 'eduyrs_mean'],
+        'spoke_labels': ['GDP/cap', 'Gini', 'Unemployment', 'Migration %', 'Education'],
+        'source':       'df_scatter',
+        'year_slider':  True,
+    },
+    'gov_spending': {
+        'label':        'Government Spending',
+        'desc':         'Government expenditure by COFOG function as % of GDP: '
+                        'health, education, social protection, defence, and economic affairs. '
+                        'Source: Eurostat (EU/EEA) and World Bank (other countries).',
+        'cols':         ['gov_exp_health', 'gov_exp_education', 'gov_exp_social',
+                         'gov_exp_defence', 'gov_exp_economic'],
+        'spoke_labels': ['Health', 'Education', 'Social', 'Defence', 'Economic'],
+        'source':       'df_gov_exp',
+        'year_slider':  True,
+    },
+}
+
 # ── Precomputed dataset directory ─────────────────────────────────────────────
 # On the server (Render), only the three small derived CSVs in this folder exist.
 # On a local dev machine, the full raw data is used and the CSVs are regenerated
@@ -944,10 +1004,23 @@ def load_scatter_data() -> pd.DataFrame:
              [c for c in x_cols + y_cols if c in df.columns]
     df = df[keep].copy()
 
+    # Merge extended government expenditure (all 39 countries)
+    gov_exp = load_gov_exp()
+    if not gov_exp.empty:
+        gov_cols = [c for c in gov_exp.columns if c not in ('cntry', 'year')]
+        df = df.merge(gov_exp[['cntry', 'year'] + gov_cols],
+                      on=['cntry', 'year'], how='left', suffixes=('', '_new'))
+        for col in gov_cols:
+            if col in df.columns and col + '_new' in df.columns:
+                df[col] = df[col].combine_first(df.pop(col + '_new'))
+            elif col + '_new' in df.columns:
+                df.rename(columns={col + '_new': col}, inplace=True)
+
     n_patched = sum(1 for k in _GINI_PATCHES
                     if df[(df['cntry'] == k[0]) & (df['year'] == k[1])]['wb_gini'].notna().any())
-    print(f'[scatter] {len(df)} rows, {len(keep)-4} variables, '
-          f'{n_patched} Gini patches applied')
+    gov_coverage = df['gov_exp_health'].notna().sum() if 'gov_exp_health' in df.columns else 0
+    print(f'[scatter] {len(df)} rows, {df["cntry"].nunique()} countries, '
+          f'{n_patched} Gini patches, gov_exp_health {gov_coverage} non-null')
     return df
 
 
@@ -1160,6 +1233,16 @@ _INDICATORS_PATH = Path(__file__).parent / 'precomputed' / 'df_indicators.csv'
 _SENTENCES_PATH  = Path(__file__).parent / 'precomputed' / 'indicator_sentences.json'
 
 
+_GOV_EXP_PATH = Path(__file__).parent / 'precomputed' / 'df_gov_exp.csv'
+
+
+def load_gov_exp() -> pd.DataFrame:
+    """Load government expenditure by COFOG function (% of GDP), all 39 countries."""
+    if _GOV_EXP_PATH.exists():
+        return pd.read_csv(_GOV_EXP_PATH)
+    return pd.DataFrame(columns=['cntry', 'year'] + GOV_EXP_COLS)
+
+
 def load_indicators() -> tuple[pd.DataFrame, dict]:
     """Load per-country indicator values and contextualising sentences.
 
@@ -1193,45 +1276,87 @@ _DIM_VALUE_IDX = {
 }
 
 
-def compute_pca_clustering(df: pd.DataFrame, round_year: int, n_clusters: int = 3):
-    """PCA (2 components) + KMeans on the 10 Schwartz Δ-scores for one ESS round.
+def compute_pca_clustering(
+    df: pd.DataFrame,
+    round_year: int,
+    n_clusters: int = 3,
+    dim_group: str = 'values',
+) -> tuple:
+    """PCA (2 components) + KMeans for a chosen dimension group and ESS year.
 
-    Returns (result_df, explained_variance, pc1_label, pc2_label).
-    result_df columns: cntry, country_name, d_SD … d_ST, pc1, pc2, cluster.
-    Returns (None, None, None, None) if no data for round_year.
+    Parameters
+    ----------
+    df         : source DataFrame (df_main, df_scatter, or df_gov_exp depending on group)
+    round_year : ESS reference year to filter on
+    n_clusters : number of K-Means clusters
+    dim_group  : key into DIMENSION_GROUPS
+
+    Returns (result_df, explained_variance, pc1_label, pc2_label)
+    or      (None, None, None, None) if insufficient data.
     """
     from sklearn.decomposition import PCA
     from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
+
+    group  = DIMENSION_GROUPS[dim_group]
+    cols   = group['cols']
+    is_val = dim_group == 'values'
 
     data = df[df['year'] == round_year].copy().reset_index(drop=True)
     if data.empty:
         return None, None, None, None
 
-    d_cols = [f'd_{k}' for k in VALUE_KEYS]
-    X = data[d_cols].values  # (n_countries, 10)
+    # Keep only rows with country names; drop rows missing any required column
+    if 'country_name' not in data.columns:
+        data['country_name'] = data['cntry'].map(COUNTRIES)
+    avail_cols = [c for c in cols if c in data.columns]
+    if len(avail_cols) < 2:
+        return None, None, None, None
 
-    pca = PCA(n_components=2, random_state=42)
-    coords = pca.fit_transform(X)
+    data = data.dropna(subset=avail_cols).reset_index(drop=True)
+    if len(data) < 3:
+        return None, None, None, None
 
-    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    X_raw = data[avail_cols].values.astype(float)
+
+    # Schwartz Δ-scores are already comparable; others need z-scoring
+    if is_val:
+        X = X_raw
+    else:
+        X = StandardScaler().fit_transform(X_raw)
+
+    pca      = PCA(n_components=2, random_state=42)
+    coords   = pca.fit_transform(X)
+    km       = KMeans(n_clusters=min(n_clusters, len(data)), random_state=42, n_init=10)
     clusters = km.fit_predict(X)
 
-    # Label each PC by the dominant Schwartz dimension contrast
+    # PC axis labels
     pc_labels = []
     for loading in pca.components_:
-        dim_mean = {
-            dim: float(np.mean(loading[idxs]))
-            for dim, idxs in _DIM_VALUE_IDX.items()
-        }
-        ordered = sorted(dim_mean.items(), key=lambda x: x[1])
-        neg_dim, pos_dim = ordered[0][0], ordered[-1][0]
-        if abs(dim_mean[pos_dim]) > 0.10 and abs(dim_mean[neg_dim]) > 0.10:
-            label = f'{pos_dim} ↔ {neg_dim}'
+        if is_val:
+            dim_mean = {
+                dim: float(np.mean(loading[
+                    [avail_cols.index(f'd_{VALUE_KEYS[i]}')
+                     for i in idxs
+                     if f'd_{VALUE_KEYS[i]}' in avail_cols]
+                ])) if any(f'd_{VALUE_KEYS[i]}' in avail_cols for i in idxs) else 0.0
+                for dim, idxs in _DIM_VALUE_IDX.items()
+            }
+            ordered = sorted(dim_mean.items(), key=lambda x: x[1])
+            neg_dim, pos_dim = ordered[0][0], ordered[-1][0]
+            label = (f'{pos_dim} ↔ {neg_dim}'
+                     if abs(dim_mean[pos_dim]) > 0.10 and abs(dim_mean[neg_dim]) > 0.10
+                     else 'Mixed')
         else:
-            label = 'Mixed dimension'
+            # Label by the variable with the highest absolute loading
+            top_idx = int(np.argmax(np.abs(loading[:len(avail_cols)])))
+            sl = group.get('spoke_labels', avail_cols)
+            top_label = sl[top_idx] if top_idx < len(sl) else avail_cols[top_idx]
+            sign = '+' if loading[top_idx] > 0 else '-'
+            label = f'{sign}{top_label} (dominant)'
         pc_labels.append(label)
 
-    result = data[['cntry', 'country_name'] + d_cols].copy()
+    result = data[['cntry', 'country_name'] + avail_cols].copy()
     result['pc1']     = coords[:, 0]
     result['pc2']     = coords[:, 1]
     result['cluster'] = clusters

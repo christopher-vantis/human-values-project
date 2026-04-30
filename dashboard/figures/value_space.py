@@ -47,18 +47,18 @@ def _hull_traces(result):
     return traces
 
 
-def _glyph_traces(result, glyph_size, max_abs):
-    """One closed radar polygon per country, placed at (pc1, pc2)."""
+def _glyph_traces(result, glyph_size, max_abs, data_cols):
+    """One closed radar polygon per country for an arbitrary set of data columns."""
     traces = []
-    n = len(VALUE_KEYS)
+    n = len(data_cols)
     for _, row in result.iterrows():
         cx, cy = float(row['pc1']), float(row['pc2'])
         color = CLUSTER_COLORS[int(row['cluster']) % len(CLUSTER_COLORS)]
 
         xs, ys = [], []
-        for i, k in enumerate(VALUE_KEYS):
-            delta_norm = float(row[f'd_{k}']) / max_abs if max_abs > 0 else 0
-            # Clockwise from top: angle 0 = up (+y), increases clockwise
+        for i, col in enumerate(data_cols):
+            v = float(row[col]) if col in row.index and not np.isnan(float(row[col])) else 0.0
+            delta_norm = v / max_abs if max_abs > 0 else 0
             angle = math.pi / 2 - 2 * math.pi * i / n
             xs.append(cx + glyph_size * delta_norm * math.cos(angle))
             ys.append(cy + glyph_size * delta_norm * math.sin(angle))
@@ -98,8 +98,8 @@ def _label_traces(result):
     return traces
 
 
-def _hover_traces(result):
-    """Invisible large hit-targets carrying country hover cards."""
+def _hover_traces(result, data_cols, spoke_labels):
+    """Invisible large hit-targets with per-variable values in hover card."""
     traces = []
     for _, row in result.iterrows():
         cntry   = row['cntry']
@@ -107,25 +107,18 @@ def _hover_traces(result):
         flag    = COUNTRY_FLAGS.get(cntry, '')
         cluster = int(row['cluster']) + 1
 
-        # Dominant individual value
-        val_deltas = {k: float(row[f'd_{k}']) for k in VALUE_KEYS}
-        top_k      = max(val_deltas, key=val_deltas.get)
-        top_label  = VALUE_LABELS.get(top_k, top_k)
-
-        # Higher-order dimension summary
-        dim_lines = []
-        for dim, dcols in _DIM_DCOLS.items():
-            present = [c for c in dcols if c in row.index]
-            val = float(np.mean([row[c] for c in present])) if present else 0.0
-            dim_lines.append(f'{dim}: {val:+.3f}')
+        var_lines = []
+        for col, lbl in zip(data_cols, spoke_labels):
+            if col in row.index:
+                v = row[col]
+                if not (isinstance(v, float) and np.isnan(v)):
+                    var_lines.append(f'{lbl}: {float(v):.2f}')
 
         hover = (
             f'<b>{flag} {name}</b><br>'
             f'Cluster {cluster}<br><br>'
-            f'Top value: {top_label}<br><br>'
-            + '<br>'.join(dim_lines)
+            + '<br>'.join(var_lines)
         )
-
         traces.append(go.Scatter(
             x=[float(row['pc1'])],
             y=[float(row['pc2'])],
@@ -137,12 +130,26 @@ def _hover_traces(result):
     return traces
 
 
-def make_value_space_figure(result, explained, pc1_label, pc2_label, round_year, n_clusters):
-    """Build the full Value Space figure from pre-computed PCA/cluster data."""
+def make_value_space_figure(result, explained, pc1_label, pc2_label,
+                             round_year, n_clusters,
+                             data_cols=None, spoke_labels=None,
+                             dim_group_label='Value Orientations'):
+    """Build the Value Space figure from pre-computed PCA/cluster data.
+
+    data_cols     : list of column names used as glyph spokes
+    spoke_labels  : display names for each spoke (same length as data_cols)
+    """
+    from data_pipeline import VALUE_KEYS  # local import to avoid circular
+
+    if data_cols is None:
+        data_cols = [f'd_{k}' for k in VALUE_KEYS]
+    if spoke_labels is None:
+        spoke_labels = data_cols
+
     if result is None or result.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text='No data available for this round.',
+            text='No data available for this selection.',
             x=0.5, y=0.5, showarrow=False, xref='paper', yref='paper',
             font=dict(size=14, color='#5a6a80'),
         )
@@ -150,9 +157,9 @@ def make_value_space_figure(result, explained, pc1_label, pc2_label, round_year,
                           margin=dict(t=60, l=80, r=40, b=60))
         return fig
 
-    # Global delta normalization for consistent glyph scale
-    d_cols  = [f'd_{k}' for k in VALUE_KEYS]
-    max_abs = float(result[d_cols].abs().max().max())
+    # Normalise glyph values across the available data columns
+    avail = [c for c in data_cols if c in result.columns]
+    max_abs = float(result[avail].abs().max().max()) if avail else 1.0
     if max_abs == 0:
         max_abs = 1.0
 
@@ -163,16 +170,17 @@ def make_value_space_figure(result, explained, pc1_label, pc2_label, round_year,
     fig = go.Figure()
     for t in _hull_traces(result):
         fig.add_trace(t)
-    for t in _glyph_traces(result, glyph_size, max_abs):
+    for t in _glyph_traces(result, glyph_size, max_abs, avail):
         fig.add_trace(t)
     for t in _label_traces(result):
         fig.add_trace(t)
-    for t in _hover_traces(result):
+    for t in _hover_traces(result, avail, spoke_labels[:len(avail)]):
         fig.add_trace(t)
 
     ess_round = YEAR_TO_ROUND.get(round_year, '?')
     x_title = f'{pc1_label}  (PC1, {explained[0]:.1%} variance)'
     y_title = f'{pc2_label}  (PC2, {explained[1]:.1%} variance)'
+    n_ctry  = len(result)
 
     fig.update_layout(
         paper_bgcolor=BG_COLOR,
@@ -182,7 +190,8 @@ def make_value_space_figure(result, explained, pc1_label, pc2_label, round_year,
         showlegend=False,
         hovermode='closest',
         title=dict(
-            text=f'ESS Round {ess_round} ({round_year})  ·  Value Space',
+            text=(f'ESS Round {ess_round} ({round_year})  ·  '
+                  f'{dim_group_label}  ·  N={n_ctry}'),
             x=0.5, xanchor='center',
             font=dict(size=14, color='#0d1b2a', family='sans-serif'),
         ),

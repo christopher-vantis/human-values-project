@@ -17,6 +17,7 @@ from figures.scatter     import make_scatter_single, make_scatter_all, make_corr
 DF          = dp.load_data()
 DF_MICRO    = dp.load_micro_individual(sample_per_dim=300)
 DF_SCATTER  = dp.load_scatter_data()
+DF_GOV_EXP  = dp.load_gov_exp()
 DF_IND, INDICATOR_SENTENCES = dp.load_indicators()
 ALL_YEARS      = dp.ALL_YEARS
 COUNTRIES      = dp.COUNTRIES
@@ -146,16 +147,14 @@ def _method_panel(btn_id: str, content_id: str, rows: list):
 
 
 def _make_cluster_summary(result, n_clusters):
-    """Sidebar cluster summary: one line per cluster with countries and dominant dim."""
+    """Sidebar cluster summary: one line per cluster with countries.
+    Works for any dimension group (dominant feature identified from available cols)."""
     if result is None or result.empty:
         return []
 
-    _dim_dcols = {
-        'Openness to Change': ['d_SD', 'd_HE', 'd_ST'],
-        'Self-Transcendence': ['d_UN', 'd_BE'],
-        'Conservation':       ['d_TR', 'd_CO', 'd_SE'],
-        'Self-Enhancement':   ['d_PO', 'd_AC'],
-    }
+    # Generic: find which data column has the highest mean per cluster
+    skip = {'cntry', 'country_name', 'pc1', 'pc2', 'cluster'}
+    data_cols = [c for c in result.columns if c not in skip]
 
     items = []
     for cid in range(n_clusters):
@@ -164,11 +163,15 @@ def _make_cluster_summary(result, n_clusters):
             continue
         country_names = sorted(grp['country_name'].tolist())
         color = CLUSTER_COLORS[cid % len(CLUSTER_COLORS)]
-        dim_scores = {
-            dim: grp[[c for c in dcols if c in grp.columns]].mean(axis=1).mean()
-            for dim, dcols in _dim_dcols.items()
-        }
-        dominant = max(dim_scores, key=dim_scores.get)
+
+        # Find the column with highest cluster mean (dominant feature)
+        dominant = ''
+        if data_cols:
+            means = {c: grp[c].mean() for c in data_cols if c in grp.columns}
+            if means:
+                top_col = max(means, key=lambda c: abs(means[c]))
+                dominant = top_col.replace('d_', '').replace('_mean', '').replace('_', ' ')
+
         items.append(html.Div([
             html.Span('● ', style={'color': color, 'font-size': '13px',
                                    'font-weight': '700'}),
@@ -177,10 +180,12 @@ def _make_cluster_summary(result, n_clusters):
                              'font-size': '12px'}),
             html.Span(', '.join(country_names),
                       style={'color': '#3a4a60', 'font-size': '11.5px'}),
-            html.Br(),
-            html.Span(f'  ({dominant})',
+            *(
+                [html.Br(), html.Span(f'  (high: {dominant})',
                       style={'color': '#7a90b0', 'font-size': '11px',
-                             'margin-left': '18px'}),
+                             'margin-left': '18px'})]
+                if dominant else []
+            ),
         ], style={'margin-bottom': '10px', 'line-height': '1.5'}))
 
     return items
@@ -379,12 +384,41 @@ landing = html.Div([
 
         # ── Government expenditure ──
         html.P([html.B('Government expenditure (COFOG classification)'),
-                ' - Eurostat Government Finance Statistics, total general government expenditure as % of GDP:'],
+                ' - all values as % of GDP:'],
                className='lp-p', style={'margin-bottom': '4px'}),
         html.Ul([
-            html.Li('GF01 General Public Services · GF02 Defence · GF04 Economic Affairs · '
-                    'GF07 Health · GF08 Culture & Recreation · GF09 Education · GF10 Social Protection.',
-                    className='lp-li'),
+            html.Li([
+                html.B('EU / EEA countries (30): '),
+                'Eurostat Government Finance Statistics (gov_10a_exp, PC_GDP unit, '
+                'sector S13 general government). Covers GF01-GF10 all COFOG functions.',
+            ], className='lp-li', style={'margin-bottom': '6px'}),
+            html.Li([
+                html.B('Non-EU countries — Health: '),
+                'World Bank Development Indicators SH.XPD.GHED.GD.ZS '
+                '(domestic general government health expenditure % GDP). '
+                'Covers GB, AL, ME, MK, RS, RU, TR, UA (38/39 total; Kosovo unavailable).',
+            ], className='lp-li', style={'margin-bottom': '6px'}),
+            html.Li([
+                html.B('Non-EU countries — Education: '),
+                'World Bank SE.XPD.TOTL.GD.ZS. '
+                'Covers GB, AL, IL, MK, RS, RU, TR, UA (37/39; ME and Kosovo unavailable).',
+            ], className='lp-li', style={'margin-bottom': '6px'}),
+            html.Li([
+                html.B('Non-EU countries — Defence: '),
+                'World Bank MS.MIL.XPND.GD.ZS (military expenditure % GDP). '
+                'Full coverage 39/39.',
+            ], className='lp-li', style={'margin-bottom': '6px'}),
+            html.Li([
+                html.B('Non-EU countries — Social Protection: '),
+                'World Bank SP.SPD.TOTL.GD.ZS. '
+                'Covers GB, AL, IL, MK, RU, RS, TR (29/39; '
+                'ME, UA, XK unavailable).',
+            ], className='lp-li', style={'margin-bottom': '6px'}),
+            html.Li([
+                html.B('Economic affairs (GF04), public services (GF01), '
+                       'culture (GF08): '),
+                'Eurostat only (29/39). No equivalent World Bank indicator available.',
+            ], className='lp-li'),
         ], className='lp-ul'),
     ], className='lp-section'),
 
@@ -729,22 +763,40 @@ tab_corr = html.Div([
 
 # ── Tab 2 - Value Space ───────────────────────────────────────────────────────
 
+_DIM_GROUP_OPTS = [
+    {'label': grp['label'], 'value': key}
+    for key, grp in dp.DIMENSION_GROUPS.items()
+]
+
 tab2 = html.Div([
     html.Div([
 
         html.Div([
             _subtitle(
-                'Countries placed by value profile similarity using PCA. '
-                'Radar glyphs show each country\'s value priorities. '
-                'Clusters group countries with similar profiles.'
+                'Countries placed by similarity in the selected dimension using PCA. '
+                'Radar glyphs show each country\'s profile. '
+                'Clusters group countries with similar patterns.'
             ),
+            _ctrl_label('Dimension'),
+            dcc.Dropdown(
+                id='t2vs-dim-group',
+                options=_DIM_GROUP_OPTS,
+                value='values',
+                clearable=False,
+                className='ctrl-dropdown',
+            ),
+            html.Div(id='t2vs-dim-desc', style={
+                'font-size': '10.5px', 'color': '#7a90b0',
+                'line-height': '1.45', 'margin': '6px 0 10px',
+                'font-style': 'italic',
+            }),
             _ctrl_label('ESS Round'),
             dcc.Slider(
                 id='t2vs-year',
                 min=min(ALL_YEARS), max=max(ALL_YEARS), step=None,
                 marks=_all_year_marks(),
                 value=DEFAULT_YEAR, included=False,
-                className='tab1-slider', vertical=True, verticalHeight=260,
+                className='tab1-slider', vertical=True, verticalHeight=240,
             ),
             html.Div(style={'height': '18px'}),
             _ctrl_label('Number of Clusters'),
@@ -757,27 +809,29 @@ tab2 = html.Div([
             html.Div(style={'height': '16px'}),
             html.Div(id='t2vs-cluster-summary'),
             _interaction_box([
-                'Hover over a country point for its profile details',
+                'Switch the Dimension dropdown to compare different profiles',
+                'Hover over a country point for variable details',
                 'Adjust the cluster slider to change group count',
-                'Drag the year slider to explore change over time',
+                'Use the year slider to explore change over time',
             ]),
             _method_panel('t2-method-btn', 't2-method-content', [
-                ('Principal Component Analysis',
-                 'Each country\'s 10 Schwartz Δ-scores are projected onto 2 principal '
-                 'components that capture the most variance in value profiles. Countries '
-                 'close together in the space have similar overall profiles; countries '
-                 'far apart differ substantially. Variance explained by each axis is '
-                 'shown in the axis label.'),
-                ('Axis orientation',
-                 'Axes are labeled by the Schwartz dimension contrast that loads most '
-                 'strongly on each component - typically Conservation vs. Openness to '
-                 'Change (PC1) and Self-Enhancement vs. Self-Transcendence (PC2), '
-                 'reflecting the two main axes of the theoretical value circumplex.'),
+                ('PCA similarity space',
+                 'Variables in the selected dimension are z-scored and projected onto '
+                 '2 principal components. Countries close together have similar profiles; '
+                 'countries far apart differ substantially. '
+                 'Variance explained by each axis is shown in the label.'),
+                ('Glyph shapes',
+                 'Each radar glyph shows the original variable values centred at the '
+                 'country\'s PCA position. Glyph shape tells you how — position tells '
+                 'you who is similar.'),
                 ('K-Means clustering',
-                 'Clusters are computed in the original 10-dimensional value space, not '
-                 'in the PCA projection. Coloured regions show cluster membership. '
-                 'Radar glyphs placed at each country\'s PCA coordinates show its actual '
-                 'value profile, so both position and glyph shape carry information.'),
+                 'Clusters are computed in the full multi-dimensional space (before PCA). '
+                 'Coloured regions show cluster membership.'),
+                ('Coverage note',
+                 'Not all countries have data for every dimension. Government Spending '
+                 'covers up to 39 countries; Defence = 39/39, Health = 38/39. '
+                 'Countries with incomplete data for the chosen group are excluded from '
+                 'the PCA.'),
             ]),
         ], className='sidebar'),
 
@@ -1212,19 +1266,47 @@ def update_corr(year, x_col, y_col):
     return fig, desc_html
 
 
-# Tab 2 - Value Space
+# Tab 2 - Value Space: description update when dimension changes
+@app.callback(
+    Output('t2vs-dim-desc', 'children'),
+    Input('t2vs-dim-group', 'value'),
+)
+def update_dim_desc(dim_group):
+    return dp.DIMENSION_GROUPS.get(dim_group, {}).get('desc', '')
+
+
+# Tab 2 - Value Space: figure + cluster summary
 @app.callback(
     Output('t2vs-graph', 'figure'),
     Output('t2vs-cluster-summary', 'children'),
     Input('t2vs-year', 'value'),
     Input('t2vs-clusters', 'value'),
+    Input('t2vs-dim-group', 'value'),
 )
-def update_value_space(year, n_clusters):
+def update_value_space(year, n_clusters, dim_group):
+    group = dp.DIMENSION_GROUPS.get(dim_group, dp.DIMENSION_GROUPS['values'])
+
+    # Select the right source DataFrame
+    source = group['source']
+    if source == 'df_main':
+        src_df = DF
+    elif source == 'df_scatter':
+        src_df = DF_SCATTER
+    elif source == 'df_gov_exp':
+        src_df = DF_GOV_EXP
+    else:
+        src_df = DF
+
     result, explained, pc1_label, pc2_label = dp.compute_pca_clustering(
-        DF, year, n_clusters
+        src_df, year, n_clusters, dim_group=dim_group,
     )
-    fig     = make_value_space_figure(result, explained, pc1_label, pc2_label,
-                                      year, n_clusters)
+    fig = make_value_space_figure(
+        result, explained, pc1_label, pc2_label,
+        year, n_clusters,
+        data_cols=group['cols'],
+        spoke_labels=group['spoke_labels'],
+        dim_group_label=group['label'],
+    )
     summary = _make_cluster_summary(result, n_clusters)
     return fig, summary
 
