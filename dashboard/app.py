@@ -112,6 +112,74 @@ _METHOD_OPEN = {
 }
 
 
+def _expandable_graph(graph_id: str,
+                      config: dict | None = None,
+                      extra_children: list | None = None) -> html.Div:
+    """Wrap a dcc.Graph with a '⤢ Fullscreen' button and a fullscreen overlay.
+
+    IDs created automatically:
+      {graph_id}-expand-btn   expand button
+      {graph_id}-close-btn    close button inside overlay
+      {graph_id}-overlay      overlay wrapper div
+      {graph_id}-overlay-graph   larger graph inside overlay
+    """
+    cfg = {**(config or {}), 'displayModeBar': False}
+    overlay_cfg = {
+        'displayModeBar': True,
+        'modeBarButtonsToRemove': ['sendDataToCloud', 'editInChartStudio',
+                                   'lasso2d', 'select2d'],
+    }
+    main_block = html.Div([
+        html.Button('',   # icon drawn via CSS ::before (SVG data-URI)
+                    id=f'{graph_id}-expand-btn',
+                    n_clicks=0,
+                    className='chart-expand-btn',
+                    title='Fullscreen'),
+        dcc.Graph(id=graph_id, config=cfg),
+        *(extra_children or []),
+    ], style={'position': 'relative'})
+    overlay = html.Div(
+        id=f'{graph_id}-overlay',
+        className='scatter-overlay',
+        style={'display': 'none'},
+        children=[html.Div([
+            html.Button('✕', id=f'{graph_id}-close-btn', n_clicks=0,
+                        className='scatter-overlay-close'),
+            dcc.Graph(id=f'{graph_id}-overlay-graph', config=overlay_cfg),
+        ], className='scatter-overlay-inner')],
+    )
+    return html.Div([main_block, overlay])
+
+
+def _register_expand_callbacks(app_ref, graph_id: str) -> None:
+    """Register clientside show/hide + figure-copy callbacks for a graph."""
+    # 1. Show / hide overlay
+    app_ref.clientside_callback(
+        """
+        function(_a, _b) {
+            const ctx = window.dash_clientside.callback_context;
+            if (!ctx || !ctx.triggered || !ctx.triggered.length)
+                return window.dash_clientside.no_update;
+            return ctx.triggered[0].prop_id.split('.')[0].endsWith('-expand-btn')
+                ? {display: 'flex'}
+                : {display: 'none'};
+        }
+        """,
+        Output(f'{graph_id}-overlay', 'style'),
+        Input(f'{graph_id}-expand-btn', 'n_clicks'),
+        Input(f'{graph_id}-close-btn',  'n_clicks'),
+        prevent_initial_call=True,
+    )
+    # 2. Copy figure from main graph to overlay graph (no server trip)
+    app_ref.clientside_callback(
+        "function(n, fig) { return fig; }",
+        Output(f'{graph_id}-overlay-graph', 'figure'),
+        Input(f'{graph_id}-expand-btn', 'n_clicks'),
+        State(graph_id, 'figure'),
+        prevent_initial_call=True,
+    )
+
+
 def _method_panel(btn_id: str, content_id: str, rows: list):
     """Collapsible methodology panel. rows = list of (title, body) tuples."""
     items = []
@@ -597,8 +665,8 @@ tab1 = html.Div([
         ], className='sidebar'),
 
         html.Div([
-            dcc.Graph(id='t1-radar', config={'displayModeBar': False}),
-            html.Div(id='t1-country-info'),
+            _expandable_graph('t1-radar',
+                              extra_children=[html.Div(id='t1-country-info')]),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
@@ -748,13 +816,13 @@ tab_corr = html.Div([
                 style={'font-size': '11px', 'color': '#7a90b0',
                        'margin': '0 0 4px', 'text-align': 'right'},
             ),
-            dcc.Graph(id='tc-heatmap', config={'displayModeBar': False}),
+            _expandable_graph('tc-heatmap'),
             # Scatter detail - updates when a cell is clicked or dropdowns change
             html.Div(id='tc-scatter-wrap', children=[
                 html.Hr(style={'border': 'none', 'border-top': '1px solid #d8e0ea',
                                'margin': '6px 0 2px'}),
-                html.Button('⤢ Fullscreen', id='tc-expand-btn',
-                            n_clicks=0, className='scatter-expand-btn'),
+                html.Button('', id='tc-expand-btn', n_clicks=0,
+                            className='chart-expand-btn', title='Fullscreen'),
                 dcc.Graph(id='tc-scatter', config={'displayModeBar': False}),
             ]),
         ], className='main-content'),
@@ -857,27 +925,10 @@ tab2 = html.Div([
         ], className='sidebar'),
 
         html.Div([
-            html.Button(
-                '⤢ Fullscreen',
-                id='t2vs-expand-btn',
-                n_clicks=0,
-                className='scatter-expand-btn',
-            ),
-            dcc.Graph(id='t2vs-graph', config={'displayModeBar': False}),
+            _expandable_graph('t2vs-graph'),
         ], className='main-content'),
 
     ], className='tab-with-sidebar'),
-
-    # ── Fullscreen overlay ──────────────────────────────────────────────────────
-    html.Div([
-        html.Div([
-            html.Button('✕', id='t2vs-close-btn', n_clicks=0,
-                        className='scatter-overlay-close'),
-            dcc.Graph(id='t2vs-overlay-graph',
-                      config={'displayModeBar': True, 'scrollZoom': True}),
-        ], className='scatter-overlay-inner'),
-    ], id='t2vs-overlay', className='scatter-overlay', style={'display': 'none'}),
-
 ], className='tab-content')
 
 
@@ -962,7 +1013,7 @@ tab3 = html.Div([
                 'color': '#0d1b2a', 'margin-bottom': '6px',
                 'text-align': 'center',
             }),
-            dcc.Graph(id='t3-parallel', config={'displayModeBar': False}),
+            _expandable_graph('t3-parallel'),
             html.Div([
                 html.P('Axis guide', style={
                     'font-size': '11px', 'font-weight': '700',
@@ -1381,54 +1432,14 @@ def update_value_space(year, n_clusters, dim_group):
     return fig, summary
 
 
-# Tab 2 - Value Space: show / hide fullscreen overlay (clientside, no server trip)
-app.clientside_callback(
-    """
-    function(n_open, n_close) {
-        const ctx = window.dash_clientside.callback_context;
-        if (!ctx || !ctx.triggered || !ctx.triggered.length)
-            return window.dash_clientside.no_update;
-        const src = ctx.triggered[0].prop_id.split('.')[0];
-        return src === 't2vs-expand-btn'
-            ? {display: 'flex'}
-            : {display: 'none'};
-    }
-    """,
-    Output('t2vs-overlay', 'style'),
-    Input('t2vs-expand-btn', 'n_clicks'),
-    Input('t2vs-close-btn',  'n_clicks'),
-    prevent_initial_call=True,
-)
+# ── Fullscreen expand callbacks — registered for every expandable graph ────────
+for _gid in ('t1-radar', 't2vs-graph', 't3-parallel'):
+    _register_expand_callbacks(app, _gid)
 
+# tc-heatmap uses the helper pattern too
+_register_expand_callbacks(app, 'tc-heatmap')
 
-# Tab 2 - Value Space: overlay figure (larger, generated on demand)
-@app.callback(
-    Output('t2vs-overlay-graph', 'figure'),
-    Input('t2vs-expand-btn', 'n_clicks'),
-    State('t2vs-year',      'value'),
-    State('t2vs-clusters',  'value'),
-    State('t2vs-dim-group', 'value'),
-    prevent_initial_call=True,
-)
-def update_value_space_overlay(_, year, n_clusters, dim_group):
-    group  = dp.DIMENSION_GROUPS.get(dim_group, dp.DIMENSION_GROUPS['values'])
-    source = group['source']
-    src_df = {'df_main': DF, 'df_scatter': DF_SCATTER,
-              'df_gov_exp': DF_GOV_EXP}.get(source, DF)
-
-    result, explained, pc1_label, pc2_label = dp.compute_pca_clustering(
-        src_df, year, n_clusters, dim_group=dim_group,
-    )
-    fig = make_value_space_figure(
-        result, explained, pc1_label, pc2_label,
-        year, n_clusters,
-        data_cols=group['cols'],
-        spoke_labels=group['spoke_labels'],
-        dim_group_label=group['label'],
-    )
-    # Override height for the larger overlay view
-    fig.update_layout(height=800)
-    return fig
+# tc-scatter already has hand-written callbacks in this file (kept as-is)
 
 
 # Tab 3 - Parallel Coordinates (IQR band profile)

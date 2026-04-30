@@ -310,3 +310,28 @@ body {
 }
 
 .scatter-expand-btn:hover { background: #edf0f7; color: #1a2840; }
+
+/* Icon-only zoom button — top-right corner of any chart container */
+.chart-expand-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 26px;
+  height: 26px;
+  background: rgba(244, 246, 251, 0.88)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Ccircle cx='5' cy='5' r='3.5' fill='none' stroke='%237a90b0' stroke-width='1.4'/%3E%3Cline x1='7.5' y1='7.5' x2='11' y2='11' stroke='%237a90b0' stroke-width='1.4' stroke-linecap='round'/%3E%3Cline x1='5' y1='3' x2='5' y2='7' stroke='%237a90b0' stroke-width='1.4' stroke-linecap='round'/%3E%3Cline x1='3' y1='5' x2='7' y2='5' stroke='%237a90b0' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat center / 14px 14px;
+  border: 1px solid #c0cce0;
+  border-radius: 5px;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+  backdrop-filter: blur(2px);
+}
+
+.chart-expand-btn:hover {
+  background-color: #e4eaf5;
+  border-color: #a0b4d0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Ccircle cx='5' cy='5' r='3.5' fill='none' stroke='%231a5fb4' stroke-width='1.4'/%3E%3Cline x1='7.5' y1='7.5' x2='11' y2='11' stroke='%231a5fb4' stroke-width='1.4' stroke-linecap='round'/%3E%3Cline x1='5' y1='3' x2='5' y2='7' stroke='%231a5fb4' stroke-width='1.4' stroke-linecap='round'/%3E%3Cline x1='3' y1='5' x2='7' y2='5' stroke='%231a5fb4' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
