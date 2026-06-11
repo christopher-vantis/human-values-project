@@ -21,15 +21,23 @@ def _country_variables(df: pd.DataFrame, country: str) -> list[str]:
 
 
 def make_gradient_dots(df: pd.DataFrame, country: str, score_col: str,
-                       score_label: str, color: str) -> go.Figure:
+                       score_label: str, color: str,
+                       country_mean: float | None = None) -> go.Figure:
     """Lollipop panel of one Schwartz score across social groups.
+
+    Δ-scores are person-centred, so 0 means "as important as the
+    respondent's own average value" - NOT the national average. The
+    optional dashed reference line marks the country-level mean so that
+    panels where every group is negative (e.g. Power anywhere) read
+    correctly as a universal low priority rather than a data error.
 
     Args:
         df: Gradient aggregates (df_gradients).
-        country: 'DE' or 'CH'.
+        country: ISO-2 ESS country code.
         score_col: Score column (d_* or dim_*).
         score_label: Display name for the score.
         color: Marker colour (the dimension colour).
+        country_mean: Country-level weighted mean of the same score.
 
     Returns:
         Plotly figure with one subplot row per gradient variable.
@@ -53,14 +61,23 @@ def make_gradient_dots(df: pd.DataFrame, country: str, score_col: str,
         subplot_titles=[GRADIENT_VARS[k]['label'] for k in keys],
     )
 
-    x_abs = float(sub[score_col].abs().max()) * 1.25 + 0.02
+    # Data-driven range that always contains 0 and the country mean -
+    # a symmetric range wastes half the panel for values like Power that
+    # sit far below zero in every group
+    anchors = [float(sub[score_col].min()), float(sub[score_col].max()), 0.0]
+    if country_mean is not None:
+        anchors.append(country_mean)
+    pad  = 0.12 * (max(anchors) - min(anchors)) + 0.02
+    x_lo, x_hi = min(anchors) - pad, max(anchors) + pad
     for i, key in enumerate(keys, start=1):
         block = (sub[sub['variable'] == key]
                  .sort_values('group_order', ascending=False))
-        # Stems from 0 to the value (None separates segments)
+        # Stems anchor at the country average (fallback 0), so stem length
+        # directly shows each group's deviation - the social gradient
+        anchor = country_mean if country_mean is not None else 0.0
         stem_x, stem_y = [], []
         for _, row in block.iterrows():
-            stem_x += [0, row[score_col], None]
+            stem_x += [anchor, row[score_col], None]
             stem_y += [row['group'], row['group'], None]
         fig.add_trace(go.Scatter(
             x=stem_x, y=stem_y, mode='lines',
@@ -78,7 +95,7 @@ def make_gradient_dots(df: pd.DataFrame, country: str, score_col: str,
             showlegend=False), row=i, col=1)
         fig.update_yaxes(tickfont=dict(size=10.5, color=theme.TEXT),
                          showgrid=False, row=i, col=1)
-        fig.update_xaxes(range=[-x_abs, x_abs], zeroline=True,
+        fig.update_xaxes(range=[x_lo, x_hi], zeroline=True,
                          zerolinewidth=1.4,
                          zerolinecolor=theme.COLORS['border-dark'],
                          row=i, col=1)
@@ -87,8 +104,17 @@ def make_gradient_dots(df: pd.DataFrame, country: str, score_col: str,
                      row=len(keys), col=1)
     fig.update_layout(
         height=140 + 30 * sum(groups_per_var),
-        margin=dict(t=36, b=52, l=150, r=24),
+        margin=dict(t=46, b=52, l=150, r=24),
     )
     fig.update_annotations(font=dict(size=11.5, color=theme.MUTED),
                            xanchor='left', x=0)
+
+    if country_mean is not None:
+        fig.add_vline(x=country_mean, line_dash='dot', line_width=1.5,
+                      line_color=theme.COLORS['border-dark'], row='all', col=1)
+        fig.add_annotation(
+            x=country_mean, xref='x', y=1.0, yref='paper', yanchor='bottom',
+            text=f'country average ({country_mean:+.2f})',
+            showarrow=False, xanchor='center',
+            font=dict(size=10, color=theme.COLORS['faint']))
     return fig

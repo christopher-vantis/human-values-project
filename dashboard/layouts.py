@@ -329,50 +329,41 @@ landing = html.Div([
 
     html.Div([
         html.H2('The theory: a circle of motivations', className='lp-h2'),
+        html.P([
+            'In 1992, social psychologist Shalom Schwartz proposed that ',
+            html.B('10 basic human values'), ' are universal across cultures '
+            '- motivational goals that guide attitudes and behaviour in '
+            'every society. He arranged them in a circle (the ',
+            html.Em('circumplex'), '): neighbouring values reinforce each '
+            'other, opposing values compete. The circle folds into ',
+            html.B('four higher-order dimensions'),
+            ' along two axes of conflict: Openness to Change vs. '
+            'Conservation, and Self-Transcendence vs. Self-Enhancement.',
+        ], className='lp-p'),
+        html.Img(src='/assets/circumplex.svg',
+                 alt='The Schwartz value circumplex: ten values arranged '
+                     'in a circle, grouped into four higher-order '
+                     'dimensions',
+                 className='lp-circumplex'),
+        html.P('Hover any sector of the wheel for the value\'s motivational '
+               'goal.', className='lp-img-caption'),
         html.Div([
             html.Div([
-                html.P([
-                    'In 1992, social psychologist Shalom Schwartz proposed '
-                    'that ', html.B('10 basic human values'), ' are universal '
-                    'across cultures - motivational goals that guide '
-                    'attitudes and behaviour in every society. He arranged '
-                    'them in a circle (the ', html.Em('circumplex'),
-                    '): neighbouring values reinforce each other, opposing '
-                    'values compete.',
-                ], className='lp-p'),
-                html.P([
-                    'The circle folds into ',
-                    html.B('four higher-order dimensions'),
-                    ' along two axes of conflict: Openness to Change vs. '
-                    'Conservation, and Self-Transcendence vs. '
-                    'Self-Enhancement.',
-                ], className='lp-p'),
-                html.Div([
-                    html.Div([
-                        html.Span('■ ', style={'color': theme.DIM_COLORS[d]}),
-                        html.B(f'{d} '),
-                        html.Span(desc, className='lp-dim-desc'),
-                    ], className='lp-dim-row')
-                    for d, desc in [
-                        ('Openness to Change',
-                         '- autonomy, novelty, pleasure.'),
-                        ('Self-Transcendence',
-                         '- welfare of others and of nature.'),
-                        ('Conservation',
-                         '- order, self-restriction, stability.'),
-                        ('Self-Enhancement',
-                         '- personal success and social dominance.'),
-                    ]
-                ], className='lp-dim-block'),
-                html.P('Hover any sector of the wheel for the value\'s '
-                       'motivational goal.', className='side-note'),
-            ], className='lp-theory-text'),
-            html.Img(src='/assets/circumplex.svg',
-                     alt='The Schwartz value circumplex: ten values arranged '
-                         'in a circle, grouped into four higher-order '
-                         'dimensions',
-                     className='lp-circumplex'),
-        ], className='lp-theory-grid'),
+                html.Span('■ ', style={'color': theme.DIM_COLORS[d]}),
+                html.B(f'{d} '),
+                html.Span(desc, className='lp-dim-desc'),
+            ], className='lp-dim-row')
+            for d, desc in [
+                ('Openness to Change',
+                 '- autonomy, novelty, pleasure.'),
+                ('Self-Transcendence',
+                 '- welfare of others and of nature.'),
+                ('Conservation',
+                 '- order, self-restriction, stability.'),
+                ('Self-Enhancement',
+                 '- personal success and social dominance.'),
+            ]
+        ], className='lp-dim-grid'),
     ], className='lp-section'),
 
     html.Div([
@@ -575,9 +566,14 @@ tab_deep = html.Div([
             ], className='grid-2'),
             card([
                 html.P('Social gradients', className='card-title'),
-                html.P('How the selected score differs across social groups '
-                       'within the country. Dots are weighted group means; '
-                       'hover for group sizes.', className='side-note'),
+                html.P('Dots are weighted group means of person-centred '
+                       'Δ-scores: 0 = as important as the respondent\'s own '
+                       'average value, NOT the national average (dashed '
+                       'line). Whole panels can sit below zero - e.g. Power '
+                       'ranks below personal average in every group, '
+                       'everywhere. The spread of dots around the dashed '
+                       'line is the actual social gradient. Hover for group '
+                       'sizes.', className='side-note'),
                 dcc.Loading(dcc.Graph(id='td-gradients',
                                       config={'displayModeBar': False}),
                             type='circle', color=theme.PRIMARY,

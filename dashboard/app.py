@@ -433,8 +433,11 @@ def update_td_scatter(country, score, indicator):
 )
 def update_td_gradients(country, score):
     """Social-gradient lollipops for the selected score."""
+    row = DF_MAIN[DF_MAIN['cntry'] == country]
+    country_mean = float(row[score].iloc[0]) if not row.empty else None
     return make_gradient_dots(DF_GRAD, country, score,
-                              SCORE_LABELS[score], SCORE_COLORS[score])
+                              SCORE_LABELS[score], SCORE_COLORS[score],
+                              country_mean=country_mean)
 
 
 # ── Tab Corr - Correlations ────────────────────────────────────────────────────

@@ -706,14 +706,26 @@ body {
 }
 .seg-label { display: inline-flex; align-items: center; gap: 7px; }
 
-/* ── Landing: theory grid + circumplex ──────────────────────────────────────── */
-.lp-theory-grid {
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  gap: var(--sp-5);
-  align-items: center;
+/* ── Landing: circumplex + dimension grid ───────────────────────────────────── */
+.lp-circumplex {
+  display: block;
+  width: 100%;
+  max-width: 660px;
+  margin: var(--sp-4) auto 6px;
 }
-.lp-circumplex { min-width: 0; }
+
+.lp-dim-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px var(--sp-5);
+  margin-top: var(--sp-4);
+}
+
+.lp-dim-grid .lp-dim-row { margin-bottom: 0; }
+
+@media (max-width: 640px) {
+  .lp-dim-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Landing: explore cards ─────────────────────────────────────────────────── */
 .explore-grid {
