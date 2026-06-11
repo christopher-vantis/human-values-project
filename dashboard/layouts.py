@@ -12,6 +12,7 @@ from dash import Input, Output, State, dcc, html
 
 import data_pipeline as dp
 import theme
+from figures.circumplex import make_circumplex
 
 DEFAULT_COUNTRY      = 'DE'
 DEFAULT_DEEP_COUNTRY = 'DE'
@@ -33,9 +34,20 @@ SCORE_OPTS = [
                for k in dp.VALUE_KEYS]},
 ]
 
+
+def flag_img(cntry: str, height: int = 13) -> html.Img:
+    """Small SVG-quality flag image (platform-independent, unlike emoji)."""
+    return html.Img(
+        src=f'https://flagcdn.com/h20/{cntry.lower()}.png',
+        srcSet=f'https://flagcdn.com/h40/{cntry.lower()}.png 2x',
+        height=height, className='flag-img',
+        alt=f'{dp.COUNTRIES.get(cntry, cntry)} flag',
+    )
+
+
 # ── Dropdown option lists ──────────────────────────────────────────────────────
 
-COUNTRY_OPTS = [{'value': c, 'label': f'{dp.COUNTRY_FLAGS[c]} {dp.COUNTRIES[c]}'}
+COUNTRY_OPTS = [{'value': c, 'label': dp.COUNTRIES[c]}
                 for c in sorted(dp.ESS11_COUNTRIES,
                                 key=lambda c: dp.COUNTRIES[c])]
 
@@ -62,7 +74,9 @@ DIM_GROUP_OPTS = [{'value': key, 'label': grp['label']}
                   for key, grp in dp.DIMENSION_GROUPS.items()]
 
 DEEP_COUNTRY_OPTS = [
-    {'value': c, 'label': f'{dp.COUNTRY_FLAGS[c]} {meta["label"]}'}
+    {'value': c,
+     'label': html.Span([flag_img(c), html.Span(meta['label'])],
+                        className='seg-label')}
     for c, meta in dp.DEEP_DIVE_COUNTRIES.items()
 ]
 
@@ -188,7 +202,7 @@ def register_expand_callbacks(app_ref, graph_id: str) -> None:
 
 
 def make_cluster_summary(result, n_clusters: int) -> list:
-    """Sidebar cluster summary: countries + dominant dimension per cluster."""
+    """Sidebar cluster summary: compact country-code chips per cluster."""
     if result is None or result.empty:
         return []
     _dim_dcols = {
@@ -208,13 +222,18 @@ def make_cluster_summary(result, n_clusters: int) -> list:
             for dim, dcols in _dim_dcols.items()
         }
         dominant = max(dim_scores, key=dim_scores.get)
+        codes = sorted(grp['cntry'].tolist())
         items.append(html.Div([
-            html.Span('● ', style={'color': color, 'fontWeight': 700}),
-            html.Span(f'Cluster {cid + 1}: ', className='cluster-title'),
-            html.Span(', '.join(sorted(grp['country_name'].tolist())),
-                      className='cluster-countries'),
-            html.Br(),
-            html.Span(f'({dominant})', className='cluster-dominant'),
+            html.Div([
+                html.Span(className='legend-swatch',
+                          style={'background': color}),
+                html.Span(f'Cluster {cid + 1}', className='cluster-title'),
+                html.Span(f'· {len(codes)} countries · leans {dominant}',
+                          className='cluster-dominant'),
+            ], className='legend-row'),
+            html.Div([html.Span(c, className='code-chip',
+                                title=dp.COUNTRIES.get(c, c))
+                      for c in codes], className='code-chip-row'),
         ], className='cluster-item'))
     return items
 
@@ -242,7 +261,7 @@ hero = html.Div([
             dmc.Button('Explore country profiles', id='hero-btn-profile',
                        n_clicks=0, size='sm', radius='md'),
             dmc.Button('Regional deep dive', id='hero-btn-deep',
-                       n_clicks=0, size='sm', radius='md', variant='outline'),
+                       n_clicks=0, size='sm', radius='md', variant='white'),
         ], className='hero-buttons'),
     ], className='hero-text'),
     html.Div([
@@ -254,148 +273,168 @@ hero = html.Div([
 ], className='hero')
 
 
+_EXPLORE_CARDS = [
+    ('Country Profile', 'tab-1', 'lp-open-profile',
+     'One country\'s value priorities as a radar profile, with structural '
+     'indicators and what makes it stand out in Europe.'),
+    ('Country Deep Dive', 'tab-deep', 'lp-open-deep',
+     'Value maps of German Bundesländer and Swiss Grossregionen, regional '
+     'correlates, and social gradients.'),
+    ('Correlations', 'tab-corr', 'lp-open-corr',
+     'Which societal conditions go together with which value priorities - '
+     'FDR-corrected, with multilevel models.'),
+    ('Value Space', 'tab-2', 'lp-open-space',
+     'All 30 countries placed by profile similarity (PCA), grouped by '
+     'silhouette-validated clustering.'),
+]
+
+# (id, target-tab) pairs used by app.py to register navigation callbacks
+EXPLORE_NAV = ([('hero-btn-profile', 'tab-1'), ('hero-btn-deep', 'tab-deep')]
+               + [(btn_id, tab) for _, tab, btn_id, _ in _EXPLORE_CARDS])
+
+
+def _explore_card(title: str, btn_id: str, text: str) -> html.Div:
+    return card([
+        html.P(title, className='card-title'),
+        html.P(text, className='explore-text'),
+        dmc.Button('Open', id=btn_id, n_clicks=0, size='compact-sm',
+                   radius='md', variant='light'),
+    ], className='explore-card')
+
+
+_METHOD_CARDS = [
+    ('Reverse-coding',
+     'The raw 1-6 scale runs from "very much like me" to "not like me at '
+     'all". Items are recoded (7 - x) so higher always means stronger '
+     'endorsement.'),
+    ('Person-centring',
+     'Scores are centred at each respondent\'s own mean (ipsatisation), '
+     'following Schwartz\'s procedure - only relative priorities matter. '
+     'Respondents with fewer than 16 valid items are excluded.'),
+    ('Survey weights',
+     'Every aggregate - country, region, social group - uses the ESS '
+     'analysis weight (anweight), correcting for sampling design and '
+     'post-stratifying to population margins.'),
+    ('Multiple-comparison control',
+     'The correlation matrix runs 76 tests at once. Significance stars use '
+     'Benjamini-Hochberg FDR-adjusted q-values, not raw p-values.'),
+    ('Honest small samples',
+     'Regions with fewer than 50 respondents are greyed out on the maps; '
+     'groups under 30 are dropped; regional correlations are labelled '
+     'exploratory.'),
+    ('External sources',
+     'V-Dem v15, World Bank WDI, Eurostat (COFOG, regional statistics, '
+     'GISCO NUTS boundaries), EIGE, Transparency International, World '
+     'Happiness Report, OECD.'),
+]
+
+
 landing = html.Div([
     hero,
 
     html.Div([
-        html.H2('Schwartz Theory of Basic Human Values', className='lp-h2'),
-        html.P([
-            'In 1992, social psychologist Shalom Schwartz proposed that ',
-            html.B('10 basic human values'), ' are universal across cultures - '
-            'motivational goals that guide attitudes and behaviour in every '
-            'society. He arranged them in a circular structure (the ',
-            html.Em('circumplex'), ') where neighbouring values reinforce each '
-            'other and opposing values compete.',
-        ], className='lp-p'),
-
-        html.Div([
-            html.Img(src='/assets/schwartz_values.jpg',
-                     className='lp-schwartz-img'),
-            html.P([
-                'Source: Schwartz, S. H. (1992). Universals in the content and '
-                'structure of values. ',
-                html.Em('Advances in Experimental Social Psychology, 25'),
-                ', 1-65.',
-            ], className='lp-img-caption'),
-        ], className='lp-img-block'),
-
-        html.P(['The 10 values cluster into ',
-                html.B('4 higher-order dimensions:')], className='lp-p'),
+        html.H2('The theory: a circle of motivations', className='lp-h2'),
         html.Div([
             html.Div([
-                html.Span('■ ', style={'color': theme.DIM_COLORS[d]}),
-                html.B(f'{d} '),
-                html.Span(desc, className='lp-dim-desc'),
-            ], className='lp-dim-row')
-            for d, desc in [
-                ('Openness to Change',
-                 '- Self-Direction, Stimulation, Hedonism. Autonomy, novelty, pleasure.'),
-                ('Self-Transcendence',
-                 '- Universalism, Benevolence. Welfare of others and of nature.'),
-                ('Conservation',
-                 '- Security, Conformity, Tradition. Order, self-restriction, stability.'),
-                ('Self-Enhancement',
-                 '- Power, Achievement. Personal success and social dominance.'),
-            ]
-        ], className='lp-dim-block'),
+                html.P([
+                    'In 1992, social psychologist Shalom Schwartz proposed '
+                    'that ', html.B('10 basic human values'), ' are universal '
+                    'across cultures - motivational goals that guide '
+                    'attitudes and behaviour in every society. He arranged '
+                    'them in a circle (the ', html.Em('circumplex'),
+                    '): neighbouring values reinforce each other, opposing '
+                    'values compete.',
+                ], className='lp-p'),
+                html.P([
+                    'The circle folds into ',
+                    html.B('four higher-order dimensions'),
+                    ' along two axes of conflict: Openness to Change vs. '
+                    'Conservation, and Self-Transcendence vs. '
+                    'Self-Enhancement.',
+                ], className='lp-p'),
+                html.Div([
+                    html.Div([
+                        html.Span('■ ', style={'color': theme.DIM_COLORS[d]}),
+                        html.B(f'{d} '),
+                        html.Span(desc, className='lp-dim-desc'),
+                    ], className='lp-dim-row')
+                    for d, desc in [
+                        ('Openness to Change',
+                         '- autonomy, novelty, pleasure.'),
+                        ('Self-Transcendence',
+                         '- welfare of others and of nature.'),
+                        ('Conservation',
+                         '- order, self-restriction, stability.'),
+                        ('Self-Enhancement',
+                         '- personal success and social dominance.'),
+                    ]
+                ], className='lp-dim-block'),
+                html.P('Hover any sector of the wheel for the value\'s '
+                       'motivational goal.', className='side-note'),
+            ], className='lp-theory-text'),
+            dcc.Graph(figure=make_circumplex(),
+                      config={'displayModeBar': False},
+                      className='lp-circumplex'),
+        ], className='lp-theory-grid'),
     ], className='lp-section'),
 
     html.Div([
-        html.H2('Data & Methods', className='lp-h2'),
+        html.H2('What\'s inside', className='lp-h2'),
+        html.Div([_explore_card(t, b, txt) for t, _, b, txt in _EXPLORE_CARDS],
+                 className='explore-grid'),
+    ], className='lp-section'),
+
+    html.Div([
+        html.H2('Data & methods', className='lp-h2'),
         html.P([
-            'All value scores come from the ', html.B('European Social Survey, '
-            'Round 11 (2023)'), ' - the newest available round, covering 30 '
-            'countries and 50,116 respondents. Values are measured with the ',
-            html.B('Portrait Values Questionnaire (PVQ-21)'), ': 21 short '
-            'portraits rated on how similar each described person is to the '
-            'respondent.',
+            'All value scores come from the ',
+            html.B('European Social Survey, Round 11 (2023)'),
+            ' - the newest available round: 30 countries, 50,116 respondents, '
+            'measured with the Portrait Values Questionnaire (PVQ-21). '
+            'Six decisions define the analysis:',
         ], className='lp-p'),
-        html.Ul([
-            html.Li([html.B('Reverse-coding: '),
-                     'the raw 1-6 scale runs from "very much like me" to '
-                     '"not like me at all"; items are recoded (7 - x) so that '
-                     'higher always means stronger endorsement.'],
-                    className='lp-li'),
-            html.Li([html.B('Person-centring (ipsatisation): '),
-                     'each respondent\'s value scores are centred at their own '
-                     'mean across all valid items, following Schwartz\'s '
-                     'recommended procedure. Only relative priorities matter, '
-                     'not absolute scale use. Respondents with fewer than 16 '
-                     'valid items are excluded (49,259 retained).'],
-                    className='lp-li'),
-            html.Li([html.B('Survey weights: '),
-                     'all country, regional, and group aggregates use the ESS '
-                     'analysis weight (anweight), which corrects for sampling '
-                     'design and post-stratifies to population margins.'],
-                    className='lp-li'),
-            html.Li([html.B('Multiple-comparison control: '),
-                     'the correlation matrix tests 76 predictor x dimension '
-                     'pairs simultaneously; significance stars are based on '
-                     'Benjamini-Hochberg FDR-adjusted q-values, not raw '
-                     'p-values.'],
-                    className='lp-li'),
-            html.Li([html.B('Regional estimates: '),
-                     'Germany at NUTS-1 (Bundesländer) and Switzerland at '
-                     'NUTS-2 (Grossregionen) level; regions with fewer than '
-                     '50 respondents are greyed out rather than displayed as '
-                     'reliable estimates.'],
-                    className='lp-li'),
-        ], className='lp-ul'),
-        html.P([html.B('External sources: '),
-                'V-Dem v15 (Liberal Democracy Index), World Bank WDI (GDP, '
-                'Gini, unemployment), Eurostat (COFOG government expenditure, '
-                'regional statistics, GISCO NUTS boundaries), plus the 12 '
-                'structural indicators documented in the Country Profile tab.'],
-               className='lp-p'),
+        html.Div([
+            html.Div([
+                html.P(title, className='method-title'),
+                html.P(text, className='method-text'),
+            ], className='method-card')
+            for title, text in _METHOD_CARDS
+        ], className='method-grid'),
     ], className='lp-section'),
 
     html.Div([
         html.H2('Limitations', className='lp-h2'),
         html.Div([
-            html.B('1. Pan-cultural regularities'),
-            html.P([
-                'Schwartz and Bardi (2001) showed that value hierarchies share '
-                'a remarkably stable cross-cultural structure: Benevolence and '
-                'Universalism rank near the top in virtually all societies; '
-                'Power near the bottom. The dashboard\'s Δ-scores reproduce '
-                'this pattern - what is informative are the ',
-                html.B('deviations of individual countries, regions, and '
-                       'groups from that universal baseline.'),
-            ], className='lp-p'),
-        ], className='lp-limitation'),
-        html.Div([
-            html.B('2. Measurement invariance'),
-            html.P([
-                'Davidov, Schmidt, and Schwartz (2008) demonstrated that '
-                'PVQ-21 items in cross-national comparison often achieve only '
-                'configural invariance, rarely metric, and almost never scalar '
-                'invariance. Person-centring mitigates but does not eliminate '
-                'this. Cross-country statements should be read as ',
-                html.Em('indicators of structural differences'),
-                ', not precise quantifications.',
-            ], className='lp-p'),
-        ], className='lp-limitation'),
-        html.Div([
-            html.B('3. Aggregates are not essences'),
-            html.P([
-                'Magun, Rudnev, and Schmidt (2016) showed that value diversity ',
-                html.Em('within'), ' European countries is often greater than '
-                'the diversity ', html.Em('between'), ' them. The multilevel '
-                'models in the Correlations tab quantify this directly: only '
-                '7-18 % of individual variance sits between countries. A '
-                'national or regional value profile is an average, not a '
-                'cultural essence.',
-            ], className='lp-p'),
-        ], className='lp-limitation'),
-        html.Div([
-            html.B('4. Cross-sectional snapshot'),
-            html.P([
-                'Everything shown refers to the 2023 cross-section. '
-                'Correlations are descriptive associations between countries '
-                '(or regions) - they are not causal estimates and say nothing '
-                'about change over time.',
-            ], className='lp-p'),
-        ], className='lp-limitation'),
+            html.Div([
+                html.B(title),
+                html.P(body, className='lp-p'),
+            ], className='lp-limitation')
+            for title, body in [
+                ('1 · Pan-cultural regularities',
+                 'Value hierarchies share a stable cross-cultural structure '
+                 '(Schwartz & Bardi 2001): Benevolence and Universalism rank '
+                 'near the top everywhere, Power near the bottom. The '
+                 'dashboard reproduces this pattern - informative are the '
+                 'deviations of countries, regions, and groups from that '
+                 'universal baseline.'),
+                ('2 · Measurement invariance',
+                 'PVQ-21 items rarely achieve scalar invariance across '
+                 'countries (Davidov, Schmidt & Schwartz 2008). '
+                 'Person-centring mitigates but does not eliminate this; '
+                 'cross-country statements indicate structural differences '
+                 'rather than precise quantities.'),
+                ('3 · Aggregates are not essences',
+                 'Value diversity within countries often exceeds diversity '
+                 'between them (Magun, Rudnev & Schmidt 2016). The multilevel '
+                 'models quantify it: only 7-18 % of individual variance sits '
+                 'between countries. A profile is an average, not a cultural '
+                 'essence.'),
+                ('4 · Cross-sectional snapshot',
+                 'Everything refers to the 2023 cross-section. Correlations '
+                 'are descriptive associations - not causal estimates, and '
+                 'silent about change over time.'),
+            ]
+        ], className='limitation-grid'),
     ], className='lp-section'),
 ], className='landing-page')
 
@@ -423,17 +462,20 @@ tab1 = html.Div([
                  'Values are elicited via 21 short portrait descriptions '
                  'rated on a 1-6 similarity scale. Respondents with fewer '
                  'than 16 valid items are excluded.'),
-                ('Higher-order dimensions',
-                 'Coloured arcs on the outer ring mark the four groupings: '
-                 'Openness to Change (Self-Direction, Stimulation, Hedonism), '
-                 'Self-Transcendence (Universalism, Benevolence), Conservation '
-                 '(Security, Conformity, Tradition), Self-Enhancement '
-                 '(Power, Achievement).'),
+                ('Ranks and highlights',
+                 'The "What stands out" panel ranks the country among the 30 '
+                 'ESS11 countries per dimension and lists the values where '
+                 'it deviates most from the unweighted average of country '
+                 'scores ("European average").'),
             ]),
         ], className='sidebar'),
         html.Div([
-            card(_expandable_graph('t1-radar')),
-            html.Div(id='t1-country-info'),
+            html.Div(id='t1-facts'),
+            html.Div([
+                card(_expandable_graph('t1-radar')),
+                html.Div(id='t1-insights'),
+            ], className='grid-radar'),
+            html.Div(id='t1-indicators'),
         ], className='main-content'),
     ], className='tab-with-sidebar'),
 ], className='tab-content')
@@ -658,7 +700,7 @@ tab2 = html.Div([
             _subtitle(
                 'Countries placed by profile similarity using PCA (ESS Round '
                 '11, 2023). Radar glyphs show each country\'s profile; '
-                'colours are K-Means clusters.'),
+                'colours are K-Means clusters. Scroll to zoom, drag to pan.'),
             ctrl_group('Dimension group',
                        select('t2vs-dim-group', DIM_GROUP_OPTS, 'values')),
             html.Div(id='t2vs-dim-desc', className='side-note'),
@@ -691,7 +733,7 @@ tab2 = html.Div([
             ]),
         ], className='sidebar'),
         html.Div([
-            card(_expandable_graph('t2vs-graph')),
+            card(_expandable_graph('t2vs-graph', config={'scrollZoom': True})),
         ], className='main-content'),
     ], className='tab-with-sidebar'),
 ], className='tab-content')

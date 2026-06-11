@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 from scipy import stats
 
 import theme
-from data_pipeline import COUNTRY_FLAGS, SCATTER_X_META, SCATTER_Y_META
+from data_pipeline import SCATTER_X_META, SCATTER_Y_META
 
 # Quick lookups
 _X_LABEL = {col: lbl for col, lbl, _ in SCATTER_X_META}
@@ -203,12 +203,16 @@ def make_corr_heatmap(df: pd.DataFrame) -> go.Figure:
 def _add_scatter_to(fig: go.Figure, df: pd.DataFrame, x_col: str, y_col: str,
                     color: str, row: int | None = None,
                     col: int | None = None) -> dict | None:
-    """Add country flags scatter + regression band to a (sub)figure."""
+    """Add country marker scatter + regression band to a (sub)figure.
+
+    Countries render as coloured markers with ISO-code labels - emoji
+    flags are avoided because they degrade to plain letter pairs on
+    several platforms.
+    """
     x = df[x_col].values.astype(float)
     y = df[y_col].values.astype(float)
     codes = df['cntry'].values
     names = df['country_name'].values
-    flags = np.array([COUNTRY_FLAGS.get(c, '') for c in codes])
     sk = dict(row=row, col=col) if row is not None else {}
 
     reg = _regress_ci(x, y)
@@ -231,20 +235,17 @@ def _add_scatter_to(fig: go.Figure, df: pd.DataFrame, x_col: str, y_col: str,
     valid = np.isfinite(x) & np.isfinite(y)
     fig.add_trace(go.Scatter(
         x=x[valid], y=y[valid],
-        mode='text',
-        text=flags[valid].tolist(),
-        textfont=dict(size=11),
-        hoverinfo='skip', showlegend=False), **sk)
-    fig.add_trace(go.Scatter(
-        x=x[valid], y=y[valid],
-        mode='markers',
-        marker=dict(size=14, opacity=0, color='rgba(0,0,0,0)'),
-        customdata=np.stack([names[valid], flags[valid],
-                             x[valid], y[valid]], axis=1),
+        mode='markers+text',
+        marker=dict(size=8, color=theme.hex_to_rgba(color, 0.85),
+                    line=dict(color='white', width=1.2)),
+        text=codes[valid].tolist(),
+        textposition='top center',
+        textfont=dict(size=9, color=theme.MUTED),
+        customdata=np.stack([names[valid], x[valid], y[valid]], axis=1),
         hovertemplate=(
-            '%{customdata[1]}  <b>%{customdata[0]}</b><br>'
-            f'{_X_LABEL.get(x_col, x_col)}: %{{customdata[2]:.3f}}<br>'
-            f'{_Y_LABEL.get(y_col, y_col)} (Δ): %{{customdata[3]:.3f}}'
+            '<b>%{customdata[0]}</b><br>'
+            f'{_X_LABEL.get(x_col, x_col)}: %{{customdata[1]:.3f}}<br>'
+            f'{_Y_LABEL.get(y_col, y_col)} (Δ): %{{customdata[2]:.3f}}'
             '<extra></extra>'),
         showlegend=False), **sk)
     return reg

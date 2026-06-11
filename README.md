@@ -1,4 +1,4 @@
-# Little Project on Human Values
+# European Values Atlas
 
 > Exploring what people across Europe value - and why it differs.
 

@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 
 import theme
 from data_pipeline import (
-    COUNTRIES, COUNTRY_FLAGS, DELTA_RANGE, ESS_ROUND, ESS_YEAR,
+    COUNTRIES, DELTA_RANGE, ESS_ROUND, ESS_YEAR,
     VALUE_KEYS, VALUE_LABELS,
 )
 
@@ -142,10 +142,9 @@ def make_radar_single(df: pd.DataFrame, country: str) -> go.Figure:
                    + [VALUE_LABELS[VALUE_KEYS[0]]],
     ))
 
-    flag = COUNTRY_FLAGS.get(country, '')
     layout = _polar_base_layout()
     layout['title'] = dict(
-        text=(f'{flag}  <b>{COUNTRIES[country]}</b>'
+        text=(f'<b>{COUNTRIES[country]}</b>'
               f'   ·   ESS Round {ESS_ROUND} ({ESS_YEAR})'),
         x=0.5, xanchor='center',
         font=dict(size=15, color=theme.INK),

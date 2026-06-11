@@ -2,7 +2,7 @@
 
 Responsibilities:
   - Load the precomputed DataFrames from the pipeline
-  - Create the Dash app and register all callbacks
+  - Create the Dash app (brand, meta tags) and register all callbacks
   - Expose the WSGI server for Gunicorn
 
 Layout objects live in layouts.py, data access in data_pipeline.py, and
@@ -31,10 +31,17 @@ from figures.radar import make_radar_single
 from figures.scatter import make_corr_heatmap, make_scatter_all, make_scatter_single
 from figures.value_space import make_value_space_figure
 from layouts import (
-    DEFAULT_COUNTRY, SCORE_COLORS, SCORE_LABELS,
-    build_tab_corr, card, landing, make_cluster_summary,
+    EXPLORE_NAV, SCORE_COLORS, SCORE_LABELS,
+    build_tab_corr, card, flag_img, landing, make_cluster_summary,
     register_expand_callbacks, tab1, tab2, tab_deep,
 )
+
+APP_NAME = 'European Values Atlas'
+BASE_URL = 'https://little-project-on-human-values.onrender.com'
+_DESCRIPTION = ('Schwartz basic human values across 30 European countries - '
+                'ESS Round 11 (2023). Country profiles, regional deep dives '
+                'for Germany and Switzerland, social gradients, and '
+                'macro-level correlates.')
 
 # ── Data (precomputed; no raw microdata needed on the server) ──────────────────
 DF_MAIN     = dp.load_data()
@@ -64,10 +71,39 @@ tab_corr = build_tab_corr(_HEATMAP_FIG, MLM_RESULTS)
 
 app = Dash(
     __name__,
-    title='Little Project on Human Values',
+    title=APP_NAME,
     suppress_callback_exceptions=True,
     external_stylesheets=dmc.styles.ALL,
+    meta_tags=[
+        {'name': 'viewport',
+         'content': 'width=device-width, initial-scale=1'},
+        {'name': 'description', 'content': _DESCRIPTION},
+        {'property': 'og:title', 'content': APP_NAME},
+        {'property': 'og:description', 'content': _DESCRIPTION},
+        {'property': 'og:type', 'content': 'website'},
+        {'property': 'og:url', 'content': BASE_URL},
+        {'property': 'og:image', 'content': f'{BASE_URL}/assets/og.png'},
+        {'name': 'twitter:card', 'content': 'summary_large_image'},
+    ],
 )
+
+app.index_string = '''<!DOCTYPE html>
+<html lang="en">
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>'''
 
 _TABS = [
     ('About',             'tab-0'),
@@ -77,17 +113,52 @@ _TABS = [
     ('Value Space',       'tab-2'),
 ]
 
+header = html.Header([
+    html.Img(src='/assets/logo.svg', className='brand-logo',
+             alt='European Values Atlas logo'),
+    html.Div([
+        html.H1(APP_NAME, className='main-title'),
+        html.P('Schwartz basic human values across Europe',
+               className='main-subtitle'),
+    ], className='brand-text'),
+    html.Span('ESS Round 11 · 2023', className='header-chip'),
+], className='header')
+
+footer = html.Footer([
+    html.Div([
+        html.Div([
+            html.Img(src='/assets/logo.svg', className='footer-logo',
+                     alt=''),
+            html.Span(APP_NAME, className='footer-brand'),
+        ], className='footer-brand-row'),
+        html.P('Exploring what people across Europe value - '
+               'and why it differs.', className='footer-tagline'),
+    ], className='footer-col'),
+    html.Div([
+        html.P('Data', className='footer-heading'),
+        html.P(['European Social Survey, Round 11 (2023) · V-Dem v15 · '
+                'World Bank WDI · Eurostat & GISCO. Raw ESS microdata is '
+                'not redistributed; all figures show anonymised aggregates.'],
+               className='footer-text'),
+    ], className='footer-col'),
+    html.Div([
+        html.P('About', className='footer-heading'),
+        html.P([
+            'Built by Christopher Vantis · ',
+            html.A('Source on GitHub',
+                   href='https://github.com/christopher-vantis/'
+                        'human-values-project',
+                   target='_blank', rel='noopener',
+                   className='footer-link'),
+            ' · MIT licence',
+        ], className='footer-text'),
+    ], className='footer-col'),
+], className='footer')
+
 app.layout = dmc.MantineProvider(
     theme={'fontFamily': theme.FONT_FAMILY, 'primaryColor': 'blue'},
     children=html.Div([
-        html.Div([
-            html.H1('Little Project on Human Values', className='main-title'),
-            html.P('Schwartz basic human values across Europe · ESS Round 11 '
-                   '(2023) · regions, social groups, and macro context.',
-                   className='main-subtitle'),
-            html.P('by Christopher Vantis', className='main-byline'),
-        ], className='header'),
-
+        header,
         dcc.Tabs(
             id='main-tabs',
             value='tab-0',
@@ -97,6 +168,7 @@ app.layout = dmc.MantineProvider(
                       for label, value in _TABS],
         ),
         html.Div(id='tab-content', className='outer-tab-content'),
+        footer,
     ], className='app-wrapper'),
 )
 
@@ -104,7 +176,7 @@ for _gid in ('t1-radar', 't2vs-graph'):
     register_expand_callbacks(app, _gid)
 
 
-# ── Tab routing + hero navigation ──────────────────────────────────────────────
+# ── Tab routing + in-page navigation ───────────────────────────────────────────
 
 @app.callback(Output('tab-content', 'children'), Input('main-tabs', 'value'))
 def render_tab(tab):
@@ -113,43 +185,112 @@ def render_tab(tab):
             'tab-corr': tab_corr, 'tab-2': tab2}[tab]
 
 
+_NAV_TARGET = dict(EXPLORE_NAV)
+
+
 @app.callback(
     Output('main-tabs', 'value'),
-    Input('hero-btn-profile', 'n_clicks'),
-    Input('hero-btn-deep', 'n_clicks'),
+    [Input(btn_id, 'n_clicks') for btn_id, _ in EXPLORE_NAV],
     prevent_initial_call=True,
 )
-def hero_navigate(profile_clicks, deep_clicks):
-    """Hero call-to-action buttons jump straight into the analysis tabs.
+def navigate(*clicks):
+    """Hero and explore-card buttons jump straight into a tab.
 
-    The guard is required because the buttons mount dynamically with the
-    landing tab, which re-fires this callback with zero clicks.
+    The zero-click guard is required because the buttons mount dynamically
+    with the landing tab, which re-fires this callback with no real click.
     """
-    if not profile_clicks and not deep_clicks:
+    if not any(clicks):
         raise PreventUpdate
-    return 'tab-1' if ctx.triggered_id == 'hero-btn-profile' else 'tab-deep'
+    target = _NAV_TARGET.get(ctx.triggered_id)
+    if not target:
+        raise PreventUpdate
+    return target
 
 
 # ── Tab 1 - Country Profile ────────────────────────────────────────────────────
 
-@app.callback(Output('t1-radar', 'figure'), Input('t1-country', 'value'))
-def update_t1(country):
-    """Redraw the radar for the selected country."""
-    return make_radar_single(DF_MAIN, country)
+def _facts_card(country: str) -> html.Div:
+    """Country facts strip: flag, name, and key figures."""
+    capital, pop_m, area_km2, system, eu = dp.COUNTRY_INFO[country]
+    n_resp = int(DF_MAIN.loc[DF_MAIN['cntry'] == country, 'n'].iloc[0]) \
+        if (DF_MAIN['cntry'] == country).any() else 0
+
+    def _stat(label, value):
+        return html.Div([
+            html.Div(label, className='fact-label'),
+            html.Div(value, className='fact-value'),
+        ], className='fact-item')
+
+    return card(html.Div([
+        html.Div([flag_img(country, height=22),
+                  html.Span(dp.COUNTRIES[country], className='facts-name')],
+                 className='facts-title'),
+        _stat('Capital', capital),
+        _stat('Population', f'{pop_m:.1f} M'),
+        _stat('Density', f'{round(pop_m * 1e6 / area_km2):,} / km²'),
+        _stat('System', system),
+        _stat('EU status', eu),
+        _stat('ESS11 sample', f'{n_resp:,}'),
+    ], className='facts-row'))
 
 
-def _stat(label: str, value: str) -> html.Div:
-    """One fact item in the country facts card."""
+def _rank_row(label: str, rank: int, total: int, color: str) -> html.Div:
+    """One dimension rank row with a position track."""
+    pct = 100 * (total - rank) / (total - 1)
     return html.Div([
-        html.Div(label, className='fact-label'),
-        html.Div(value, className='fact-value'),
-    ], className='fact-item')
+        html.Div([
+            html.Span(className='legend-swatch', style={'background': color}),
+            html.Span(label, className='insight-dim'),
+            html.Span(f'#{rank} of {total}', className='insight-rank'),
+        ], className='insight-head'),
+        html.Div(html.Div(className='rank-marker',
+                          style={'left': f'{pct:.0f}%',
+                                 'background': color}),
+                 className='rank-track'),
+    ], className='insight-row')
 
 
-def _indicator_item(col: str, ind_row, sentences: dict) -> html.Div:
-    """One structural-indicator row with hover tooltip."""
-    meta     = dp.INDICATOR_META[col]
-    sentence = sentences.get(col, '')
+def _insights_card(country: str) -> html.Div:
+    """'What stands out': dimension ranks + most distinctive values."""
+    row = DF_MAIN[DF_MAIN['cntry'] == country].iloc[0]
+    total = len(DF_MAIN)
+
+    rank_rows = []
+    for dim_label, col in dp.DIM_COLS.items():
+        rank = int((DF_MAIN[col] > row[col]).sum()) + 1
+        rank_rows.append(_rank_row(dim_label, rank, total,
+                                   theme.DIM_COLORS[dim_label]))
+
+    # Values where the country deviates most from the European average
+    # (unweighted mean of the 30 country scores)
+    devs = []
+    for k in dp.VALUE_KEYS:
+        dev = float(row[f'd_{k}'] - DF_MAIN[f'd_{k}'].mean())
+        devs.append((abs(dev), dev, k))
+    top = sorted(devs, reverse=True)[:3]
+    dev_rows = [html.Div([
+        html.Span('▲' if dev > 0 else '▼',
+                  className='dev-arrow',
+                  style={'color': '#16a34a' if dev > 0 else '#dc2626'}),
+        html.Span(dp.VALUE_LABELS[k], className='insight-dim'),
+        html.Span(f'{abs(dev):.2f} {"above" if dev > 0 else "below"} '
+                  'European average', className='dev-text'),
+    ], className='dev-row') for _, dev, k in top]
+
+    return card([
+        html.P('What stands out', className='card-title'),
+        html.P('Rank among the 30 ESS11 countries (right = higher priority).',
+               className='side-note'),
+        *rank_rows,
+        html.Div(className='card-divider'),
+        html.P('Most distinctive values', className='card-title'),
+        *dev_rows,
+    ], className='insights-card')
+
+
+def _stat_card(col: str, ind_row, sentences: dict) -> html.Div:
+    """One structural indicator as a compact stat card with a range bar."""
+    meta = dp.INDICATOR_META[col]
     v, yr = (None, None) if ind_row is None else (
         ind_row.get(col), ind_row.get(col + '_year'))
     yr = int(yr) if yr and not pd.isna(yr) else None
@@ -157,51 +298,58 @@ def _indicator_item(col: str, ind_row, sentences: dict) -> html.Div:
     val_str = 'n/a' if na else (
         f'{v:.3f}' if col == 'vdem_ldi' else
         f'{v:.0f}' if col == 'estat_gdp_pps' else f'{v:.1f}')
-    yr_str = f' ({yr})' if yr and not na else ''
+
+    series = DF_IND[col].dropna() if col in DF_IND.columns else pd.Series([])
+    bar = []
+    if not na and len(series) > 2 and series.max() > series.min():
+        pct = 100 * (v - series.min()) / (series.max() - series.min())
+        bar = [html.Div(html.Div(className='range-marker',
+                                 style={'left': f'{pct:.0f}%'}),
+                        className='range-track'),
+               html.Div([html.Span(f'{series.min():.0f}'),
+                         html.Span('all ESS11 countries'),
+                         html.Span(f'{series.max():.0f}')],
+                        className='range-ends')]
+
     return html.Div([
+        html.Div(meta['label'], className='stat-label'),
         html.Div([
-            html.Span(meta['label'], className='indicator-name'),
-            html.Span(f'{val_str} {meta["unit"]}{yr_str}',
-                      className='indicator-value'
-                                + (' indicator-value--na' if na else '')),
-        ], className='indicator-line'),
-        html.Div(sentence, className='indicator-sentence'),
+            html.Span(val_str,
+                      className='stat-value' + (' stat-value--na' if na else '')),
+            html.Span(meta['unit'], className='stat-unit'),
+            html.Span(str(yr) if yr and not na else '',
+                      className='stat-year'),
+        ], className='stat-value-row'),
+        *bar,
+        html.Div(sentences.get(col, ''), className='stat-sentence'),
         html.Div([
             html.P(meta.get('desc', ''), className='indicator-tooltip-desc'),
             html.P(meta['source'], className='indicator-tooltip-source'),
         ], className='indicator-tooltip'),
-    ], className='indicator-row')
+    ], className='stat-card indicator-row')
 
 
-@app.callback(Output('t1-country-info', 'children'),
-              Input('t1-country', 'value'))
-def update_t1_info(country):
-    """Country facts card + 12 structural indicators."""
-    info = dp.COUNTRY_INFO.get(country)
-    if not info:
-        return []
-    capital, pop_m, area_km2, system, eu = info
-    n_resp = int(DF_MAIN.loc[DF_MAIN['cntry'] == country, 'n'].iloc[0]) \
-        if (DF_MAIN['cntry'] == country).any() else 0
-
-    facts = card(html.Div([
-        _stat('Capital', capital),
-        _stat('Population', f'{pop_m:.1f} M'),
-        _stat('Density', f'{round(pop_m * 1e6 / area_km2):,} / km²'),
-        _stat('System', system),
-        _stat('EU status', eu),
-        _stat('ESS11 sample', f'{n_resp:,} respondents'),
-    ], className='facts-row'))
-
+@app.callback(
+    Output('t1-radar', 'figure'),
+    Output('t1-facts', 'children'),
+    Output('t1-insights', 'children'),
+    Output('t1-indicators', 'children'),
+    Input('t1-country', 'value'),
+)
+def update_t1(country):
+    """Redraw radar, facts, insights, and indicator cards for one country."""
     ind_row = DF_IND.loc[country] if country in DF_IND.index else None
     sents   = INDICATOR_SENTENCES.get(country, {})
     indicators = card([
-        html.P('Structural Indicators', className='card-title'),
-        *[_indicator_item(col, ind_row, sents) for col in dp.INDICATOR_META],
-        html.P('Hover over a row for the indicator description and source.',
+        html.P('Structural indicators', className='card-title'),
+        html.P('Hover a card for the indicator definition and source. The '
+               'track shows where the country sits among all ESS11 countries.',
                className='side-note'),
+        html.Div([_stat_card(col, ind_row, sents)
+                  for col in dp.INDICATOR_META], className='stat-grid'),
     ])
-    return html.Div([facts, indicators])
+    return (make_radar_single(DF_MAIN, country), _facts_card(country),
+            _insights_card(country), indicators)
 
 
 # ── Tab Deep Dive ──────────────────────────────────────────────────────────────

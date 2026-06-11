@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- European Values Atlas mark: the four Schwartz higher-order dimensions
+       as quarter arcs of the circumplex -->
+  <g fill="none" stroke-width="7" stroke-linecap="butt">
+    <path d="M 24 5  A 19 19 0 0 1 43 24"   stroke="#2563eb"/>
+    <path d="M 43 24 A 19 19 0 0 1 24 43"   stroke="#8b5cf6"/>
+    <path d="M 24 43 A 19 19 0 0 1 5 24"    stroke="#0d9488"/>
+    <path d="M 5 24  A 19 19 0 0 1 24 5"    stroke="#dc2626"/>
+  </g>
+  <circle cx="24" cy="24" r="6.5" fill="#0f1c30"/>
+</svg>
