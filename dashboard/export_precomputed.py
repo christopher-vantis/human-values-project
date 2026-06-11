@@ -1,66 +1,68 @@
-"""Run once on your local machine to generate the three small derived datasets.
+"""Regenerate the precomputed datasets deployed with the dashboard (run locally).
 
-These CSVs contain no raw ESS microdata — only anonymised aggregates — and are
-safe to commit to git and deploy on a public server.
+Builds, from the raw ESS11 CSV (which is never deployed):
+  - df_main.csv       country-level weighted Schwartz aggregates
+  - df_scatter.csv    country-level cross-section for the Correlations tab
+  - df_regional.csv   NUTS-region aggregates for Germany + Switzerland
+  - df_gradients.csv  within-country social gradients for Germany + Switzerland
+
+Not touched here (built by their own scripts):
+  - df_gov_exp.csv, df_indicators.csv, indicator_sentences.json
+  - nuts_regions.geojson + df_regional_indicators.csv (build_regional.py)
+  - mlm_results.json (build_mlm.py)
 
 Usage:
-    cd /path/to/project
     python dashboard/export_precomputed.py
 """
+from __future__ import annotations
+
+import logging
 import sys
 from pathlib import Path
-import shutil
+
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Temporarily move away any existing precomputed files so the full
-# computation runs (not the cached version).
 import data_pipeline as dp
 
-out = dp.PRECOMPUTED_DIR
-out.mkdir(exist_ok=True)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
+log = logging.getLogger(__name__)
 
-_tmp = out.parent / '_precomputed_backup'
-if out.exists() and any(out.iterdir()):
-    shutil.move(str(out), str(_tmp))
-    out.mkdir(exist_ok=True)
+# Legacy artefact of the removed Parallel Coordinates tab
+_OBSOLETE = ['df_micro.csv']
 
-try:
-    print('=== 1 / 3  df_main  (load_data) ===')
-    df_main = dp.load_data()
-    df_main.to_csv(out / 'df_main.csv', index=False)
-    kb = (out / 'df_main.csv').stat().st_size // 1024
-    print(f'  → df_main.csv  {kb} KB  {len(df_main)} rows\n')
 
-    print('=== 2 / 3  df_scatter  (load_scatter_data) ===')
-    df_scatter = dp.load_scatter_data()
-    df_scatter.to_csv(out / 'df_scatter.csv', index=False)
-    kb = (out / 'df_scatter.csv').stat().st_size // 1024
-    print(f'  → df_scatter.csv  {kb} KB  {len(df_scatter)} rows\n')
+def _write(df: pd.DataFrame, name: str) -> None:
+    """Write one precomputed CSV and log its size."""
+    path = dp.PRECOMPUTED_DIR / f'{name}.csv'
+    df.to_csv(path, index=False)
+    log.info('%s: %d rows, %d KB', path.name, len(df),
+             path.stat().st_size // 1024)
 
-    print('=== 3 / 3  df_micro  (load_micro_individual) ===')
-    df_micro = dp.load_micro_individual()
-    df_micro.to_csv(out / 'df_micro.csv', index=False)
-    kb = (out / 'df_micro.csv').stat().st_size // 1024
-    print(f'  → df_micro.csv  {kb} KB  {len(df_micro)} rows\n')
 
-    # df_gov_exp is built by build_gov_exp.py and already lives in precomputed/;
-    # copy it over from raw/indicators if present (so backup/restore loop works).
-    from pathlib import Path
-    import shutil as _sh
-    gov_src = Path(__file__).parent.parent / 'data' / 'raw' / 'indicators' / 'gov_exp_full.csv'
-    gov_dst = out / 'df_gov_exp.csv'
-    if gov_src.exists() and not gov_dst.exists():
-        _sh.copy(gov_src, gov_dst)
-        kb = gov_dst.stat().st_size // 1024
-        import pandas as _pd
-        _n = len(_pd.read_csv(gov_dst))
-        print(f'  → df_gov_exp.csv  {kb} KB  {_n} rows (copied from raw)\n')
+def main() -> None:
+    """Build all ESS11-derived datasets and remove obsolete files."""
+    dp.PRECOMPUTED_DIR.mkdir(exist_ok=True)
 
-    print('All done. Files are in dashboard/precomputed/')
-    print('Next step: git add dashboard/precomputed/ && git commit')
+    log.info('Reading + scoring ESS11 microdata ...')
+    micro   = dp.add_person_scores(dp.read_ess11_micro())
+    df_main = dp.build_country_aggregates(micro)
 
-finally:
-    # Clean up backup
-    if _tmp.exists():
-        shutil.rmtree(str(_tmp))
+    _write(df_main, 'df_main')
+    _write(dp.build_scatter(micro, df_main), 'df_scatter')
+    _write(dp.build_regional_aggregates(micro), 'df_regional')
+    _write(dp.build_gradients(micro), 'df_gradients')
+
+    for name in _OBSOLETE:
+        path = dp.PRECOMPUTED_DIR / name
+        if path.exists():
+            path.unlink()
+            log.info('Removed obsolete %s', name)
+
+    log.info('Done. Next: python dashboard/build_regional.py (if needed) '
+             'and python dashboard/build_mlm.py')
+
+
+if __name__ == '__main__':
+    main()

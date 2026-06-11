@@ -796,391 +796,346 @@ def proto_generator_itself():
 
 def proto_dashboard():
     s = []
-    s += [T("dashboard/app.py + data_pipeline.py + figures/", "title"),
-          T("Interaktives Dash-Portfolio-Dashboard für Schwartz-Wertorientierungen", "subtitle"),
+    s += [T("dashboard/app.py + data_pipeline.py + theme.py + figures/", "title"),
+          T("Interaktives Dash-Dashboard für Schwartz-Wertorientierungen (ESS Runde 11)", "subtitle"),
           HR()]
 
     s += [T("Was macht dieses Dashboard?", "h1"),
-          T("Das Dashboard visualisiert Schwartz-Wertorientierungen aus dem European Social Survey "
-            "(ESS1–11, 2002–2023) für 14 europäische Länder in vier interaktiven Tabs: "
-            "Radar-Chart (Länderprofil), Radar-Overlay (Ländervergleich), "
-            "Parallelkoordinaten (Dimensionsvergleich) und eine choroplethische Europakarte. "
-            "Es nutzt Dash/Plotly als Webframework und läuft lokal unter http://127.0.0.1:8050.", "body"),
+          T("Das Dashboard visualisiert Schwartz-Wertorientierungen aus dem European Social "
+            "Survey Runde 11 (2023, 30 Länder, ~50 000 Befragte) in fünf Tabs: About (Hero + "
+            "Methodik), Country Profile (Radar), Country Deep Dive (regionale Choroplethen, "
+            "Regionalkorrelate, soziale Gradienten für DE/CH), Correlations (FDR-korrigierte "
+            "Heatmap + Scatter + Mehrebenenmodelle) und Value Space (PCA + K-Means mit "
+            "Silhouettenvalidierung). Die Architektur trennt strikt: data_pipeline.py "
+            "(Daten), theme.py (Design-Tokens + Plotly-Template), layouts.py (statisches "
+            "Layout), figures/ (eine Datei pro Diagrammtyp), app.py (Callbacks).", "body"),
           SPACE(8)]
 
-    s += [T("1 · Dash — Python-Webapps ohne JavaScript", "h1"),
-          T("Dash ist ein Framework das HTML-Layouts und interaktive Plotly-Charts "
-            "mit Python-Callbacks verbindet. Kein JavaScript nötig:", "body"),
-          CODE("from dash import Dash, dcc, html, Input, Output, callback\n\n"
-               "app = Dash(__name__)\n\n"
-               "app.layout = html.Div([\n"
-               "    dcc.Dropdown(id='land', options=['DE','FR'], value='DE'),\n"
-               "    dcc.Graph(id='radar'),\n"
-               "])\n\n"
-               "@app.callback(Output('radar', 'figure'), Input('land', 'value'))\n"
-               "def update(land):\n"
-               "    return make_figure(land)\n\n"
-               "app.run(debug=True)"),
-          T("Callbacks sind Python-Funktionen die automatisch aufgerufen werden wenn "
-            "ein Input-Komponenten-Wert sich ändert. Input() und Output() binden "
-            "DOM-Elemente (via id) an Callback-Parameter.", "body"),
+    s += [T("1 · Personenzentrierte Schwartz-Scores mit Gewichten", "h1"),
+          T("Die methodische Kernlogik: PVQ-Items werden umgepolt (7 - x, denn 1 = "
+            "'sehr ähnlich'), pro Person am eigenen Mittelwert zentriert (Ipsatisierung) "
+            "und erst dann mit dem ESS-Analysegewicht anweight aggregiert:", "body"),
+          CODE("rev  = 7 - df[ALL_PVQ_ITEMS]            # höher = stärkere Zustimmung\n"
+               "mrat = rev.mean(axis=1)                  # persönlicher Mittelwert\n"
+               "for key, items in PVQ21_ITEMS.items():\n"
+               "    df[f'c_{key}'] = rev[items].mean(axis=1) - mrat\n\n"
+               "# Gewichteter Länder-Mittelwert (np.average mit weights)\n"
+               "np.average(vals[mask], weights=weights[mask])"),
+          T("Ohne Umpolung wären alle Vorzeichen invertiert (historischer Bug); ohne "
+            "Gewichte wären über-repräsentierte Gruppen (städtisch, gebildet) "
+            "übergewichtet. Befragte mit weniger als 16 von 21 gültigen Items werden "
+            "ausgeschlossen.", "body"),
           SPACE(6)]
 
-    s += [T("2 · go.Scatterpolar — Radar-Chart in Plotly", "h1"),
-          T("Plotly's Radar-Chart nutzt Polarkoordinaten mit kategorischen Achsen:", "body"),
-          CODE("import plotly.graph_objects as go\n\n"
-               "fig = go.Figure(go.Scatterpolar(\n"
-               "    theta=['SD', 'UN', 'BE', 'TR', 'CO'],  # Achsenbeschriftungen\n"
-               "    r=[-0.3, 0.5, -0.8, 0.4, -0.1],       # Werte (Δ-Scores)\n"
-               "    fill='toself',            # Fläche unter dem Polygon füllen\n"
-               "    line=dict(color='#1a5fb4', width=2),\n"
-               "))\n"
-               "fig.update_layout(polar=dict(\n"
-               "    angularaxis=dict(direction='clockwise', rotation=90),\n"
-               "    radialaxis=dict(range=[-1.4, 1.75]),\n"
-               "))"),
-          T("direction='clockwise' + rotation=90: der erste Wert erscheint oben "
-            "(12-Uhr-Position), weitere gehen im Uhrzeigersinn — genau wie die "
-            "bestehenden matplotlib-Radarcharts. fill='toself' füllt das Polygon "
-            "bis zur eigenen Kontur (nicht bis zum Ursprung).", "body"),
+    s += [T("2 · Plotly-Template als zentrales Design-System", "h1"),
+          T("Statt Schriftart und Farben in jeder Figur zu wiederholen, registriert "
+            "theme.py einmal ein Template und setzt es als Default:", "body"),
+          CODE("import plotly.io as pio\n"
+               "import plotly.graph_objects as go\n\n"
+               "template = go.layout.Template()\n"
+               "template.layout = go.Layout(\n"
+               "    font=dict(family='Inter, sans-serif', size=12.5),\n"
+               "    paper_bgcolor='#ffffff',\n"
+               "    hoverlabel=dict(bgcolor='white'),\n"
+               ")\n"
+               "pio.templates['values'] = template\n"
+               "pio.templates.default = 'values'      # gilt ab jetzt überall"),
+          T("Jede go.Figure() erbt das Template automatisch. Die CSS-Seite spiegelt "
+            "dieselben Tokens als CSS-Variablen (:root { --c-primary: ... }) — eine "
+            "Quelle der Wahrheit pro Medium, beide in theme.py dokumentiert.", "body"),
           SPACE(6)]
 
-    s += [T("3 · go.Parcoords — Parallelkoordinaten", "h1"),
-          T("Parallelkoordinaten visualisieren mehrdimensionale Daten als Linien "
-            "über senkrecht angeordneten Achsen:", "body"),
-          CODE("fig = go.Figure(go.Parcoords(\n"
-               "    dimensions=[\n"
-               "        dict(label='Offenheit', values=df['dim_openness']),\n"
-               "        dict(label='Bewahrung',  values=df['dim_conservation']),\n"
-               "    ],\n"
-               "    line=dict(\n"
-               "        color=df['land_idx'],       # numerischer Index je Land\n"
-               "        colorscale=schrittweise_farben,  # diskrete Farbskala\n"
-               "        showscale=False,\n"
-               "    ),\n"
-               "))"),
-          T("go.Parcoords erwartet eine kontinuierliche Farbskala, obwohl wir "
-            "diskrete Länder-Farben wollen. Lösung: eine Stufenfarb-Skala — "
-            "jedes Band [i/n, (i+1)/n] bekommt genau eine Farbe. "
-            "cmin=0, cmax=n mappt den Integer-Index auf die Skala.", "body"),
+    s += [T("3 · dash-mantine-components — fertige UI-Bausteine", "h1"),
+          T("Native Dash-Dropdowns sehen nach Browser-Defaults aus. Die "
+            "Mantine-Bibliothek liefert konsistent gestylte Komponenten:", "body"),
+          CODE("import dash_mantine_components as dmc\n\n"
+               "app.layout = dmc.MantineProvider(    # Pflicht-Wrapper\n"
+               "    theme={'fontFamily': 'Inter, sans-serif'},\n"
+               "    children=html.Div([...]),\n"
+               ")\n\n"
+               "dmc.Select(id='country', data=[{'value': 'DE', 'label': 'Germany'}],\n"
+               "           searchable=True, radius='md')\n"
+               "dmc.SegmentedControl(id='td-country', data=[...], fullWidth=True)\n"
+               "dmc.Accordion(...)   # Info-Panels ohne eigene Callbacks"),
+          T("Wichtig: dmc 2.x benötigt Dash >= 3 und app = Dash(external_stylesheets="
+            "dmc.styles.ALL). dmc.Accordion ersetzt die früheren button-basierten "
+            "Info-Panels samt ihrer vier Toggle-Callbacks — der Auf/Zu-Zustand lebt "
+            "komplett im Browser.", "body"),
           SPACE(6)]
 
-    s += [T("4 · go.Choropleth — Europakarte", "h1"),
-          T("Choropleth-Karten färben Länder nach einem Zahlenwert ein:", "body"),
-          CODE("fig = go.Figure(go.Choropleth(\n"
-               "    locations=['DEU', 'FRA', 'POL'],  # ISO-3-Codes\n"
-               "    z=[0.12, -0.08, 0.31],            # Wert je Land\n"
-               "    colorscale='RdBu_r',              # divergierend, Rot=hoch\n"
-               "    zmid=0,                           # Mitte der Farbskala\n"
-               "))\n"
-               "fig.update_layout(geo=dict(\n"
-               "    scope='europe',\n"
-               "    projection_type='natural earth',\n"
-               "    lonaxis=dict(range=[-15, 35]),\n"
-               "    lataxis=dict(range=[35, 72]),\n"
-               "))"),
-          T("locationmode='ISO-3' (Standard) mappt dreistellige Ländercodes auf "
-            "Plotly's eingebauten GeoJSON. scope='europe' zeigt nur Europa. "
-            "Länder ohne Daten erscheinen automatisch in hellem Grau. "
-            "zmid=0 zentriert die Farbskala am Nullpunkt.", "body"),
+    s += [T("4 · Dynamisch eingebundene Inputs und PreventUpdate", "h1"),
+          T("Die Hero-Buttons existieren erst, wenn der About-Tab gerendert wird. "
+            "Dash feuert Callbacks beim Einhängen solcher Komponenten erneut — "
+            "trotz prevent_initial_call=True:", "body"),
+          CODE("@app.callback(Output('main-tabs', 'value'),\n"
+               "              Input('hero-btn-profile', 'n_clicks'),\n"
+               "              Input('hero-btn-deep', 'n_clicks'),\n"
+               "              prevent_initial_call=True)\n"
+               "def hero_navigate(profile_clicks, deep_clicks):\n"
+               "    if not profile_clicks and not deep_clicks:\n"
+               "        raise PreventUpdate          # Mount-Feuerung abfangen\n"
+               "    return 'tab-1' if ctx.triggered_id == 'hero-btn-profile' \\\n"
+               "           else 'tab-deep'"),
+          T("Ohne den Guard springt das Dashboard beim Laden sofort auf Tab 1, "
+            "weil beide n_clicks=0-Werte als 'Trigger' ankommen. Generell gilt: "
+            "Callbacks, deren Inputs in dynamisch gerenderten Tabs leben, müssen "
+            "den Null-Klick-Fall explizit behandeln.", "body"),
           SPACE(6)]
 
-    s += [T("5 · pathlib.Path — portable Dateipfade", "h1"),
-          T("Statt absoluter Pfade nutzt das Dashboard Path(__file__).parent "
-            "um Dateien relativ zur eigenen Position zu finden:", "body"),
-          CODE("from pathlib import Path\n\n"
-               "_THIS_DIR = Path(__file__).parent      # Ordner dieser Datei\n"
-               "DATA_PATH = _THIS_DIR.parent / 'data' / 'ess_data.csv'\n\n"
-               "# Funktioniert auf Windows, Mac und Linux\n"
-               "# __file__ ist der absolute Pfad der aktuell laufenden Datei"),
-          T("/ (Slash-Operator) bei Path-Objekten verbindet Pfadteile — "
-            "Path('a') / 'b' / 'c' ergibt Path('a/b/c'). "
-            ".parent gibt den Eltern-Ordner zurück. "
-            "Das eliminiert hartcodierte absolute Pfade und macht "
-            "das Projekt auf jedem Rechner portabel.", "body")]
+    s += [T("5 · Vorberechnung statt Live-Berechnung (Render-Deployment)", "h1"),
+          T("Die ESS-Rohdaten (Nutzungsbedingungen!) bleiben lokal. "
+            "export_precomputed.py schreibt kleine aggregierte CSVs, die der "
+            "Server liest. Jeder Loader prüft zuerst den Cache:", "body"),
+          CODE("def load_data() -> pd.DataFrame:\n"
+               "    cached = _load_precomputed('df_main')   # precomputed/df_main.csv\n"
+               "    if cached is not None:\n"
+               "        return cached\n"
+               "    micro = add_person_scores(read_ess11_micro())  # nur lokal\n"
+               "    return build_country_aggregates(micro)"),
+          T("Vorteile: schneller Serverstart, keine 700-MB-Rohdaten im Deployment, "
+            "und die Korrelations-Heatmap wird sogar nur einmal beim App-Start "
+            "gebaut, weil sie keine veränderlichen Inputs mehr hat.", "body")]
 
     save_pdf("dashboard.pdf", s)
 
 
-def proto_parallel_micro():
-    s = [T("Individual-Level Parallel Coordinates", "title"),
-         T("dashboard/data_pipeline.py  ·  dashboard/figures/parallel.py  ·  "
-           "dashboard/app.py (Tab 3)", "subtitle"),
+def proto_build_regional():
+    s = [T("build_regional.py", "title"),
+         T("GISCO-NUTS-Geometrien + Eurostat-Regionalindikatoren für den Deep-Dive-Tab", "subtitle"),
          HR(),
-         T("Was dieses Modul tut", "h1"),
-         T("Dieses Modul lädt individuelle ESS-Befragte aus allen 11 Erhebungsrunden "
-           "(2002–2023) für 14 europäische Länder, ordnet jede Person ihrer dominanten "
-           "Schwartz-Dimension zu (Openness to Change, Self-Transcendence, Conservation "
-           "oder Self-Enhancement), und visualisiert 1 200 geschichtete Stichproben "
-           "(300 pro Dimension) in einem Parallelkoordinaten-Diagramm. "
-           "Die 12 Achsen zeigen soziale Einstellungsvariablen aus dem ESS: "
-           "interpersonales Vertrauen, Institutionenvertrauen, Lebenszufriedenheit, "
-           "politische Orientierung, Religiosität und mehr. "
-           "Ein Dropdown hebt eine Dimension hervor, während die anderen verblassen.", "body"),
+         T("Was dieses Script tut", "h1"),
+         T("Es lädt die NUTS-2021-Regionsgrenzen vom GISCO-Dienst der EU, "
+           "beschneidet sie auf Deutschland (NUTS-1, Bundesländer) und die Schweiz "
+           "(NUTS-2, Grossregionen), und holt fünf Regionalindikatoren "
+           "(BIP/Kopf, Arbeitslosigkeit, Tertiärquote, Medianalter, Bevölkerungsdichte) "
+           "über die Eurostat-API — jeweils das neueste verfügbare Jahr pro Region. "
+           "Ergebnis: precomputed/nuts_regions.geojson und df_regional_indicators.csv.", "body"),
          SPACE(10),
 
-         T("1 · usecols — selektives Laden großer CSV-Dateien", "h1"),
-         T("Die ESS-CSVs haben bis zu 600 Spalten, aber wir brauchen nur rund 20. "
-           "pandas.read_csv() liest standardmäßig alle Spalten. Mit usecols laden "
-           "wir nur das, was wirklich gebraucht wird:", "body"),
-         CODE("# Nur benötigte Spalten lesen — viel schneller bei breiten CSVs\n"
-              "header = pd.read_csv(path, nrows=0)          # nur Spaltennamen\n"
-              "header.columns = header.columns.str.lower()  # normalisieren\n"
-              "avail = [c for c in needed if c in header.columns]\n\n"
-              "df = pd.read_csv(path, usecols=avail, low_memory=False)"),
-         T("Zuerst die Spaltennamen mit nrows=0 laden, dann die tatsächlich "
-           "vorhandenen Spalten filtern — so werden Fehler vermieden, wenn eine "
-           "Variable in einem bestimmten ESS-Runde fehlt.", "body"),
+         T("1 · GeoJSON — Geometrien als JSON", "h1"),
+         T("GeoJSON ist ein Standardformat für Geodaten: eine FeatureCollection "
+           "enthält Features mit geometry (Polygon-Koordinaten) und properties "
+           "(Metadaten wie NUTS_ID):", "body"),
+         CODE('{ "type": "FeatureCollection",\n'
+              '  "features": [\n'
+              '    { "type": "Feature",\n'
+              '      "geometry": { "type": "Polygon", "coordinates": [...] },\n'
+              '      "properties": { "NUTS_ID": "DE1", "NUTS_NAME": "Baden-W..." }\n'
+              '    } ] }'),
+         T("GISCO bietet die Dateien in mehreren Auflösungen (60M/20M/10M/03M) und "
+           "pro NUTS-Ebene an. 10M ist ein guter Kompromiss: glatte Umrisse, "
+           "trotzdem nur ~70 KB nach dem Zuschnitt auf 23 Regionen. "
+           "separators=(',', ':') beim json.dumps spart Whitespace.", "body"),
          SPACE(6),
 
-         T("2 · Ipsatisierung — personenzentrierte Werteprofile", "h1"),
-         T("Die 21 PVQ-Items werden auf einer 1–6-Skala bewertet. Verschiedene "
-           "Personen nutzen die Skala unterschiedlich (manche sagen generell 'sehr "
-           "wichtig', andere 'wenig wichtig'). Ipsatisierung entfernt diesen "
-           "Bias, indem der persönliche Mittelwert über alle Items subtrahiert wird:", "body"),
-         CODE("pvq_mean = df[pvq_cols].mean(axis=1)  # Mittelwert je Person\n"
-              "ip = df[pvq_cols].sub(pvq_mean, axis=0)  # zentrierte Items\n\n"
-              "# Dimensionswert = Mittelwert der zugehörigen Items\n"
-              "df['_oc'] = ip[['ipcrtiv', 'ipadvnt', 'ipgdtim']].mean(axis=1)\n"
-              "df['_st'] = ip[['iphlppl', 'ipeqopt', 'ipudrst']].mean(axis=1)"),
-         T("sub(pvq_mean, axis=0) subtrahiert die Zeilenwerte — axis=0 bedeutet, "
-           "dass die Series pvq_mean entlang der Zeilen ausgerichtet wird. "
-           "Das Ergebnis: positive Werte = relativ wichtiger als der eigene Schnitt, "
-           "negative = relativ weniger wichtig.", "body"),
+         T("2 · Eurostat-API und das JSON-stat-Format", "h1"),
+         T("Die Eurostat-Dissemination-API liefert Daten als JSON-stat 2.0: "
+           "die Werte stehen in einem flachen Dictionary, dessen Schlüssel ein "
+           "linearer Index über alle Dimensionskombinationen ist:", "body"),
+         CODE("# Anfrage: ein Datensatz, feste Filter, mehrere Regionen\n"
+              "params = [('format', 'JSON'), ('unit', 'PC'), ('sex', 'T')]\n"
+              "params += [('geo', g) for g in REGIONS]   # geo darf wiederholt werden\n"
+              "resp = requests.get(url, params=params, timeout=120)\n\n"
+              "# Antwort: payload['id'] = ['unit','sex','geo','time']  (Dim-Reihenfolge)\n"
+              "#          payload['size'] = [1, 1, 23, 30]             (Kardinalität)\n"
+              "#          payload['value'] = {'0': 48600, '1': ...}    (flacher Index)"),
+         T("Der flache Index funktioniert wie ein Zahlensystem mit gemischter Basis: "
+           "Index = geo_pos * stride_geo + time_pos * stride_time, wobei die Strides "
+           "rückwärts aus den Dimensionsgrößen multipliziert werden. Die Dekodierung "
+           "ist eine Modulo/Division-Schleife:", "body"),
+         CODE("strides = [1] * len(sizes)\n"
+              "for i in range(len(sizes) - 2, -1, -1):\n"
+              "    strides[i] = strides[i + 1] * sizes[i + 1]\n\n"
+              "coords = [(flat // strides[i]) % sizes[i] for i in range(len(sizes))]"),
          SPACE(6),
 
-         T("3 · np.argmax — dominante Dimension bestimmen", "h1"),
-         T("Jede Person bekommt die Dimension zugeordnet, auf der sie den höchsten "
-           "ipsatisierten Wert hat:", "body"),
-         CODE("dim_arr = df[['_oc', '_st', '_co', '_se']].values  # numpy-Array\n"
-              "dim_idx = np.argmax(dim_arr, axis=1)               # Index des Max pro Zeile\n\n"
-              "dim_names = ['Openness to Change', 'Self-Transcendence',\n"
-              "             'Conservation', 'Self-Enhancement']\n"
-              "df['dominant_dim'] = [dim_names[i] for i in dim_idx]\n"
-              "df['dim_id'] = dim_idx.astype(float)"),
-         T("np.argmax(array, axis=1) gibt für jede Zeile den Spaltenindex des "
-           "maximalen Werts zurück. Das Ergebnis ist ein Integer-Array der Länge n. "
-           "dim_id als float ist notwendig, weil Plotly's Parcoords-Farbskala "
-           "einen numerischen Wert erwartet.", "body"),
+         T("3 · 'Neuestes Jahr pro Gruppe' mit groupby().tail(1)", "h1"),
+         T("Ein häufiges Muster: pro Region nur die jüngste Beobachtung behalten:", "body"),
+         CODE("latest = (df.sort_values('time')\n"
+              "            .groupby('geo', as_index=False)\n"
+              "            .tail(1))     # letzte Zeile je Gruppe = neuestes Jahr"),
+         T("sort_values vor groupby garantiert die Reihenfolge innerhalb jeder Gruppe; "
+           "tail(1) nimmt die letzte. Alternative wie idxmax funktionieren auch, "
+           "aber tail(1) bleibt lesbar, wenn es Bindungen oder NaNs gibt.", "body"),
          SPACE(6),
 
-         T("4 · Fehlende Werte bei Likert-Skalen", "h1"),
-         T("Im ESS werden fehlende Antworten durch hohe Zahlen kodiert: "
-           "77 = weiß nicht, 88 = keine Antwort, 99 = nicht anwendbar. "
-           "Für Skalen mit maximal 10 Punkten sind alle Werte > 10 automatisch "
-           "fehlende Codes:", "body"),
-         CODE("_valid_max = {\n"
-              "    'ppltrst': 10, 'lrscale': 10, 'happy': 10,\n"
-              "    'gincdif': 5,  'aesfdrk': 4,\n"
-              "}\n"
-              "for col in MICRO_ATTRS:\n"
-              "    df[col] = pd.to_numeric(df[col], errors='coerce')\n"
-              "    df[col] = df[col].where(df[col] <= _valid_max.get(col, 10))\n\n"
-              "# Imputation: fehlende Werte mit Runden-Median ersetzen\n"
-              "medians = df.groupby('essround')[col].transform('median')\n"
-              "df[col] = df[col].fillna(medians)"),
-         T("where(Bedingung) behält gültige Werte und setzt ungültige auf NaN. "
-           "groupby().transform('median') berechnet den Median pro Gruppe und "
-           "gibt eine Series derselben Länge zurück — ideal für Imputation ohne "
-           "Loop.", "body"),
+         T("4 · Choropleth mit eigenem GeoJSON (featureidkey)", "h1"),
+         T("So verbindet der Deep-Dive-Tab die Geometrien mit den Daten:", "body"),
+         CODE("go.Choropleth(\n"
+              "    geojson=feature_collection,\n"
+              "    locations=df['region'],              # z. B. 'DE1', 'CH04'\n"
+              "    featureidkey='properties.NUTS_ID',   # Matching-Schlüssel\n"
+              "    z=df['dim_conservation'],\n"
+              "    zmid=0,                              # divergierende Skala um 0\n"
+              ")\n"
+              "fig.update_geos(fitbounds='locations', visible=False)"),
+         T("featureidkey sagt Plotly, welches Property im GeoJSON mit locations "
+           "verglichen wird. fitbounds='locations' zoomt automatisch auf die "
+           "vorhandenen Regionen; visible=False blendet die Weltkarte darunter aus. "
+           "Regionen mit zu kleinem n bekommen einen zweiten, grauen Trace — "
+           "ehrlicher als unzuverlässige Schätzwerte einzufärben.", "body")]
+
+    save_pdf("build_regional.pdf", s)
+
+
+def proto_build_mlm():
+    s = [T("build_mlm.py", "title"),
+         T("Mehrebenenmodelle (MixedLM): Individuen in Ländern", "subtitle"),
+         HR(),
+         T("Was dieses Script tut", "h1"),
+         T("Für jede der vier Schwartz-Dimensionen schätzt es ein lineares "
+           "gemischtes Modell auf den ~48 000 ESS11-Befragten: individuelle "
+           "Prädiktoren (Alter, Geschlecht, Bildung, Stadt/Land, Religiosität) und "
+           "Länder-Prädiktoren (BIP/Kopf, Gini) gleichzeitig, mit zufälligen "
+           "Länder-Intercepts. Die Ergebnisse (Koeffizienten, ICC) landen als JSON "
+           "in precomputed/ und werden im Correlations-Tab angezeigt.", "body"),
+         SPACE(10),
+
+         T("1 · Warum Mehrebenenmodelle?", "h1"),
+         T("Länderkorrelationen können Komposition (wer dort lebt) nicht von "
+           "Kontext (wie das Land ist) trennen — und Individualkorrelationen "
+           "ignorieren, dass Befragte in Ländern geclustert sind (verletzte "
+           "Unabhängigkeitsannahme, zu kleine Standardfehler). Das gemischte Modell "
+           "löst beides:", "body"),
+         CODE("# y_ij = Score von Person i in Land j\n"
+              "y_ij = b0 + b1*alter_ij + b2*bildung_ij     # Komposition\n"
+              "          + g1*bip_j    + g2*gini_j          # Kontext\n"
+              "          + u_j + e_ij                        # zufälliger Intercept + Rest"),
          SPACE(6),
 
-         T("5 · Richtungsumkehrung von Skalen", "h1"),
-         T("Zwei Variablen sind so kodiert, dass niedrige Zahlen 'gut' bedeuten. "
-           "Damit höher = positiver auf allen Achsen gilt:", "body"),
-         CODE("# gincdif: 1=stimme stark zu (Umverteilung) → soll HOCh sein\n"
-              "df['redistr_supp'] = 6 - df['gincdif']  # Bereich bleibt 1–5\n\n"
-              "# aesfdrk: 1=sehr sicher → soll HOCh sein\n"
-              "df['safety'] = 5 - df['aesfdrk']         # Bereich bleibt 1–4"),
-         T("Einfache lineare Transformation: neuer_wert = (max+1) - alter_wert. "
-           "Dadurch bleibt der Wertebereich gleich, aber die Richtung kehrt sich um. "
-           "Die Bezeichnung auf der Achse erklärt die neue Interpretation.", "body"),
+         T("2 · statsmodels MixedLM mit Formel-API", "h1"),
+         CODE("import statsmodels.formula.api as smf\n\n"
+              "model = smf.mixedlm(\n"
+              "    'dim_openness ~ age_z + female + eduyrs_z + urban + relig_z'\n"
+              "    ' + gdp_z + gini_z',\n"
+              "    df, groups=df['cntry'],          # Cluster-Variable\n"
+              ").fit(reml=True)\n\n"
+              "model.params      # feste Effekte (b, g)\n"
+              "model.bse         # Standardfehler\n"
+              "model.cov_re      # Varianz des zufälligen Intercepts"),
+         T("groups= definiert die Cluster (Länder). REML (restricted maximum "
+           "likelihood) ist der Standard für Varianzkomponenten. Die Formel-API "
+           "übernimmt das Anlegen der Design-Matrix inklusive Intercept.", "body"),
          SPACE(6),
 
-         T("6 · Geschichtete Zufallsstichprobe", "h1"),
-         T("Mit ~50 000 Befragten pro Dimension wäre das Diagramm unlesbar. "
-           "Eine Zufallsstichprobe von 300 pro Gruppe (1 200 gesamt) macht es "
-           "handhabbar, ohne eine Dimension zu bevorzugen:", "body"),
-         CODE("rng = np.random.RandomState(seed)   # reproduzierbarer Zufall\n"
-              "parts = []\n"
-              "for dim in dim_names:\n"
-              "    sub = df[df['dominant_dim'] == dim]\n"
-              "    n   = min(sample_per_dim, len(sub))   # nicht mehr als vorhanden\n"
-              "    parts.append(sub.sample(n=n, random_state=rng))\n\n"
-              "result = pd.concat(parts, ignore_index=True)"),
-         T("RandomState(seed) erzeugt einen deterministischen Zufallsgenerator — "
-           "gleicher Seed = gleiche Stichprobe bei jedem Start. "
-           "DataFrame.sample(n, random_state=rng) zieht ohne Zurücklegen. "
-           "pd.concat(ignore_index=True) setzt die Zeilenindizes zurück.", "body"),
+         T("3 · ICC — wie viel Varianz liegt zwischen Ländern?", "h1"),
+         T("Der Intraklassen-Korrelationskoeffizient kommt aus dem Nullmodell "
+           "(nur Intercept + zufälliger Ländereffekt):", "body"),
+         CODE("null = smf.mixedlm('y ~ 1', df, groups=df['cntry']).fit(reml=True)\n"
+              "var_u = float(null.cov_re.iloc[0, 0])   # Varianz zwischen Ländern\n"
+              "var_e = float(null.scale)               # Varianz innerhalb\n"
+              "icc = var_u / (var_u + var_e)"),
+         T("Ergebnis hier: 7-18 % je nach Dimension. Heißt: über 80 % der "
+           "Wertunterschiede liegen INNERHALB von Ländern — ein Länderprofil ist "
+           "ein Durchschnitt, keine Kulturessenz. Das relativiert die "
+           "Länder-Scatterplots methodisch korrekt.", "body"),
          SPACE(6),
 
-         T("7 · Diskrete Stufenfarbskala für Plotly Parcoords", "h1"),
-         T("go.Parcoords unterstützt nur kontinuierliche Farbskalen — "
-           "diskrete Gruppenfarben erfordern einen Trick mit Stufenfunktionen:", "body"),
-         CODE("# dim_id: 0=Openness, 1=Transcendence, 2=Conservation, 3=Enhancement\n"
-              "# cmin=0, cmax=4 → dim_id=0 liegt bei Position 0.0, dim_id=3 bei 0.75\n\n"
-              "colorscale = []\n"
-              "for i, dim in enumerate(DIMS):\n"
-              "    lo = i / 4                          # Stufenstart\n"
-              "    hi = (i + 1) / 4                   # Stufenende\n"
-              "    rgba = hex_to_rgba(DIM_COLORS[dim], 0.22)  # transparente Farbe\n"
-              "    colorscale.append([lo, rgba])\n"
-              "    colorscale.append([(hi - 1e-9) if i < 3 else 1.0, rgba])"),
-         T("Jede Stufe besteht aus zwei identischen Einträgen mit fast gleichem "
-           "Positionswert — so interpoliert Plotly nicht zwischen den Stufen. "
-           "Die 1e-9-Korrektur verhindert, dass der erste Wert der nächsten Stufe "
-           "schon die neue Farbe annimmt.", "body"),
-         SPACE(6),
+         T("4 · z-Standardisierung für vergleichbare Koeffizienten", "h1"),
+         CODE("def _zscore(s):\n"
+              "    return (s - s.mean()) / s.std()\n\n"
+              "df['age_z'] = _zscore(df['agea'])\n"
+              "df['gdp_z'] = _zscore(macro['wb_gdp_per_capita_ppp'])  # über Länder"),
+         T("Nach z-Standardisierung bedeutet ein Koeffizient: 'Änderung des "
+           "Scores pro Standardabweichung des Prädiktors' — Alter und BIP werden "
+           "direkt vergleichbar. Binäre Variablen (female, urban) bleiben 0/1 "
+           "und lesen sich als Gruppendifferenz.", "body")]
 
-         T("8 · Highlight-Effekt durch RGBA-Transparenz", "h1"),
-         T("Um eine Dimension hervorzuheben, werden die anderen nahezu unsichtbar:", "body"),
-         CODE("def _dim_colorscale(highlight):  # highlight: None oder Dim-Name\n"
-              "    scale = []\n"
-              "    for i, dim in enumerate(DIMS):\n"
-              "        if highlight is None:\n"
-              "            rgba = hex_to_rgba(DIM_COLORS[dim], 0.22)   # alle sichtbar\n"
-              "        elif dim == highlight:\n"
-              "            rgba = hex_to_rgba(DIM_COLORS[dim], 0.65)   # hervorgehoben\n"
-              "        else:\n"
-              "            rgba = 'rgba(160,160,160,0.04)'              # fast unsichtbar\n"
-              "        ...  # Stufeneinträge wie oben"),
-         T("hex_to_rgba('#3584e4', 0.65) erzeugt 'rgba(53,132,228,0.65)'. "
-           "RGBA-Farben in der Parcoords-Farbskala steuern direkt die "
-           "Linienopazität — ohne globale line.opacity, die alle Linien gleich "
-           "behandeln würde. Das erlaubt per-Gruppe-Transparenz.", "body")]
-
-    save_pdf("parallel_micro.pdf", s)
+    save_pdf("build_mlm.pdf", s)
 
 
 def proto_scatter_corr():
-    s = [T("Correlation Scatter Tab", "title"),
-         T("dashboard/figures/scatter.py  ·  dashboard/data_pipeline.py  ·  "
-           "dashboard/app.py (Tab Correlations)", "subtitle"),
+    s = [T("Correlation Tab mit FDR-Korrektur", "title"),
+         T("dashboard/figures/scatter.py  ·  dashboard/app.py (Tab Correlations)", "subtitle"),
          HR(),
          T("Was dieses Modul tut", "h1"),
-         T("Dieses Modul visualisiert Pearson-Korrelationen zwischen Ländermitteln "
-           "von 17 Prädiktoren (ESS-Sozialvariablen, externe Makroindikatoren, "
-           "COFOG-Staatsausgaben) und den vier Schwartz-Dimensionen. "
-           "Analyseeinheit: ein Mittelwert pro Land über alle ESS-Runden (N bis zu 39). "
-           "Ein Dropdown wählt die X-Achse (Prädiktor); ein zweites wählt eine oder "
-           "alle vier Dimensionen. Die Visualisierung zeigt OLS-Regressionsgerade, "
-           "95 %-Konfidenzband, Länderkürzel-Labels und Hover mit genauen Werten.", "body"),
+         T("Dieses Modul visualisiert Pearson-Korrelationen zwischen Länderwerten "
+           "von 19 Prädiktoren (gewichtete ESS-Sozialvariablen, externe "
+           "Makroindikatoren 2023, COFOG-Staatsausgaben) und den vier "
+           "Schwartz-Dimensionen — als Heatmap und als Scatter mit OLS-Gerade und "
+           "95 %-Konfidenzband. Analyseeinheit: die 30 Länder der ESS-Runde 11. "
+           "Signifikanzsterne basieren auf Benjamini-Hochberg-korrigierten "
+           "q-Werten über alle 76 Tests.", "body"),
          SPACE(10),
 
-         T("1 · scipy.stats.linregress — OLS-Regression in einer Zeile", "h1"),
-         T("Die einfache lineare Regression (OLS) zwischen zwei Arrays liefert "
-           "alle nötigen Statistiken in einem Aufruf:", "body"),
+         T("1 · Multiples Testen und die Benjamini-Hochberg-Prozedur", "h1"),
+         T("76 Tests bei alpha = 0.05 erzeugen im Schnitt ~4 falsch-positive "
+           "'Befunde'. BH kontrolliert stattdessen die False-Discovery-Rate: den "
+           "erwarteten Anteil falscher Entdeckungen unter den als signifikant "
+           "markierten:", "body"),
+         CODE("def _bh_qvalues(p):\n"
+              "    m = len(p)\n"
+              "    order = np.argsort(p)\n"
+              "    ranked = p[order] * m / (np.arange(m) + 1)   # p * m / Rang\n"
+              "    # Monotonie von hinten erzwingen:\n"
+              "    ranked = np.minimum.accumulate(ranked[::-1])[::-1]\n"
+              "    q = np.empty(m); q[order] = np.clip(ranked, 0, 1)\n"
+              "    return q"),
+         T("Der Trick: p-Werte aufsteigend sortieren, jeden mit m/Rang "
+           "multiplizieren, dann von hinten kumulativ das Minimum nehmen, damit "
+           "q-Werte monoton bleiben. np.minimum.accumulate auf dem umgedrehten "
+           "Array ist die vektorisierte Form dieser Rückwärtsschleife. "
+           "Die Heatmap zeigt p UND q — Transparenz statt Sternchen-Magie.", "body"),
+         SPACE(6),
+
+         T("2 · scipy.stats.linregress — OLS-Regression in einer Zeile", "h1"),
          CODE("from scipy import stats\n\n"
-              "slope, intercept, r, p, stderr = stats.linregress(x, y)\n\n"
-              "# slope    = Steigung der Regressionsgeraden\n"
-              "# intercept = y-Achsenabschnitt\n"
-              "# r         = Pearson-Korrelationskoeffizient\n"
-              "# p         = zweiseitiger p-Wert für H0: slope=0\n"
-              "# stderr    = Standardfehler der Steigung"),
-         T("Bei N bis zu 39 (df bis zu 37) steigt die Teststärke erheblich. p < 0.05 wird als "
-           "Signifikanzgrenze verwendet (†), da auch schwache Trends bei kleinem "
-           "N substantiell bedeutsam sein können.", "body"),
+              "slope, intercept, r, p, stderr = stats.linregress(x, y)"),
+         T("Liefert Steigung, Achsenabschnitt, Pearson-r, zweiseitigen p-Wert "
+           "(H0: slope = 0) und den Standardfehler der Steigung in einem Aufruf. "
+           "Mit N = 30 Ländern ist die Power begrenzt; einzelne einflussreiche "
+           "Länder können r deutlich verschieben — daher der Hinweis 'descriptive, "
+           "not causal' im Methoden-Panel.", "body"),
          SPACE(6),
 
-         T("2 · Parametrisches CI-Band um die Regressionsgerade", "h1"),
-         T("Das Konfidenzband zeigt, wo die wahre Gerade mit 95 % Wahrscheinlichkeit "
-           "liegt. Formel (analytisch, ohne Bootstrap):", "body"),
+         T("3 · Parametrisches CI-Band um die Regressionsgerade", "h1"),
          CODE("mse    = np.sum((y - (slope*x + intercept))**2) / (n - 2)\n"
-              "se_y   = np.sqrt(mse)                 # Root-MSE\n"
               "x_bar  = x.mean()\n"
-              "ss_x   = np.sum((x - x_bar)**2)       # Streuung in x\n"
-              "t_crit = stats.t.ppf(0.975, df=n-2)   # t* für 95 % CI\n\n"
-              "# Standardfehler des Fitted-Values an jedem x_fit-Punkt:\n"
-              "se_band = se_y * np.sqrt(1/n + (x_fit - x_bar)**2 / ss_x)\n\n"
-              "ci_lo = y_fit - t_crit * se_band\n"
-              "ci_hi = y_fit + t_crit * se_band"),
-         T("Das Band ist an den Enden breiter als in der Mitte — weil die "
-           "Unsicherheit wächst, je weiter man sich vom Datenschwerpunkt entfernt. "
-           "stats.t.ppf(0.975, df) gibt den t-Wert für das obere 2.5 %-Quantil "
-           "der t-Verteilung mit df Freiheitsgraden.", "body"),
+              "ss_x   = np.sum((x - x_bar)**2)\n"
+              "t_crit = stats.t.ppf(0.975, df=n-2)\n\n"
+              "se_band = np.sqrt(mse) * np.sqrt(1/n + (x_fit - x_bar)**2 / ss_x)\n"
+              "ci_lo, ci_hi = y_fit - t_crit*se_band, y_fit + t_crit*se_band"),
+         T("Das Band ist an den Enden breiter als in der Mitte — die Unsicherheit "
+           "wächst mit der Entfernung vom Datenschwerpunkt. stats.t.ppf(0.975, df) "
+           "ist das obere 2.5 %-Quantil der t-Verteilung.", "body"),
          SPACE(6),
 
-         T("3 · fill='tonexty' — Fläche zwischen zwei Scatter-Traces", "h1"),
-         T("Um das CI-Band als Fläche zu zeichnen, werden zwei unsichtbare Linien "
-           "(obere und untere Grenze) mit fill='tonexty' verbunden:", "body"),
-         CODE("# Obere Grenze — unsichtbar, definiert den oberen Rand\n"
-              "fig.add_trace(go.Scatter(\n"
-              "    x=x_fit, y=ci_hi,\n"
-              "    mode='lines', line=dict(width=0),\n"
-              "    showlegend=False, hoverinfo='skip',\n"
-              "))\n\n"
-              "# Untere Grenze — füllt bis zur oberen Grenze\n"
-              "fig.add_trace(go.Scatter(\n"
-              "    x=x_fit, y=ci_lo,\n"
-              "    mode='lines', line=dict(width=0),\n"
-              "    fill='tonexty',             # Fläche bis zum vorherigen Trace\n"
-              "    fillcolor='rgba(53,132,228,0.10)',\n"
-              "    showlegend=False, hoverinfo='skip',\n"
-              "))"),
+         T("4 · fill='tonexty' — Fläche zwischen zwei Traces", "h1"),
+         CODE("fig.add_trace(go.Scatter(x=x_fit, y=ci_hi, mode='lines',\n"
+              "                         line=dict(width=0), hoverinfo='skip'))\n"
+              "fig.add_trace(go.Scatter(x=x_fit, y=ci_lo, mode='lines',\n"
+              "                         line=dict(width=0),\n"
+              "                         fill='tonexty',      # bis zum vorherigen Trace\n"
+              "                         fillcolor='rgba(37,99,235,0.10)'))"),
          T("fill='tonexty' füllt die Fläche zwischen diesem und dem unmittelbar "
-           "davor hinzugefügten Trace. Die Reihenfolge der add_trace()-Aufrufe "
-           "ist daher entscheidend: erst obere Grenze, dann untere.", "body"),
+           "davor hinzugefügten Trace — die Reihenfolge der add_trace()-Aufrufe "
+           "ist entscheidend.", "body"),
          SPACE(6),
 
-         T("4 · customdata + hovertemplate — strukturierte Tooltips", "h1"),
-         T("Statt automatischer Hover-Texte übergibt customdata strukturierte Daten "
-           "und hovertemplate formatiert sie mit Platzhaltern:", "body"),
+         T("5 · customdata + hovertemplate — strukturierte Tooltips", "h1"),
          CODE("fig.add_trace(go.Scatter(\n"
               "    x=x_vals, y=y_vals,\n"
-              "    customdata=np.stack(\n"
-              "        [country_names, flags, x_vals, y_vals], axis=1\n"
-              "    ),\n"
-              "    hovertemplate=(\n"
-              "        '%{customdata[1]}  <b>%{customdata[0]}</b><br>'\n"
-              "        'Trust: %{customdata[2]:.3f}<br>'\n"
-              "        'Openness: %{customdata[3]:.3f}'\n"
-              "        '<extra></extra>'   # unterdrückt den Trace-Namen\n"
-              "    ),\n"
+              "    customdata=np.stack([names, flags, x_vals, y_vals], axis=1),\n"
+              "    hovertemplate=('%{customdata[1]} <b>%{customdata[0]}</b><br>'\n"
+              "                   'Trust: %{customdata[2]:.3f}'\n"
+              "                   '<extra></extra>'),\n"
               "))"),
-         T("customdata ist ein 2D-Array mit einer Zeile pro Datenpunkt. "
-           "np.stack([a,b,c], axis=1) transponiert eine Liste von 1D-Arrays zu "
-           "einem N×3-Array. Im hovertemplate greifen %{customdata[i]} auf Spalte i "
-           "zu. <extra></extra> entfernt den automatischen Trace-Namen aus dem Tooltip.", "body"),
+         T("customdata ist ein 2D-Array (eine Zeile pro Punkt); "
+           "%{customdata[i]} greift im Template auf Spalte i zu. "
+           "<extra></extra> unterdrückt den automatischen Trace-Namen.", "body"),
          SPACE(6),
 
-         T("5 · make_subplots — 2×2 Subplot-Raster", "h1"),
-         T("Für die Übersicht aller vier Dimensionen gleichzeitig:", "body"),
-         CODE("from plotly.subplots import make_subplots\n\n"
-              "fig = make_subplots(\n"
-              "    rows=2, cols=2,\n"
-              "    horizontal_spacing=0.12,\n"
-              "    vertical_spacing=0.16,\n"
-              ")\n\n"
-              "# Traces einem bestimmten Subplot zuordnen:\n"
-              "fig.add_trace(go.Scatter(...), row=1, col=1)\n"
-              "fig.add_trace(go.Scatter(...), row=1, col=2)\n\n"
-              "# Achsen eines bestimmten Subplots formatieren:\n"
-              "fig.update_xaxes(title_text='Trust', row=1, col=1)\n"
-              "fig.update_yaxes(title_text='Openness (Δ)', row=1, col=1)"),
-         T("make_subplots erstellt intern ein 'grid_ref', das row/col-Koordinaten "
-           "auf Achsenindizes abbildet (x1, x2, x3, x4 für vier Subplots). "
-           "Ohne make_subplots schlägt add_trace(..., row=1, col=1) mit einem "
-           "AttributeError fehl.", "body"),
-         SPACE(6),
-
-         T("6 · Annotation-Referenzen in Subplots", "h1"),
-         T("Texte wie 'r = +0.72 ** p = 0.003' werden per add_annotation() "
-           "in einen bestimmten Subplot eingetragen. Referenzen folgen dem Schema "
-           "'x{n} domain' / 'y{n} domain' (n = Subplot-Nummer):", "body"),
-         CODE("ax_i = (row - 1) * 2 + col      # Subplot-Nummer 1-4\n"
-              "xref = 'x domain' if ax_i == 1 else f'x{ax_i} domain'\n"
-              "yref = 'y domain' if ax_i == 1 else f'y{ax_i} domain'\n\n"
-              "fig.add_annotation(\n"
-              "    text='r = +0.72**  p = 0.003',\n"
-              "    xref=xref, yref=yref,   # relativ zur Subplot-Fläche\n"
-              "    x=0.98, y=0.98,         # rechts oben (0–1 = links–rechts)\n"
-              "    xanchor='right', yanchor='top',\n"
-              "    showarrow=False,\n"
-              ")"),
-         T("'x domain' / 'y domain' bedeutet: Koordinaten relativ zur Breite/Höhe "
-           "des jeweiligen Subplot-Bereichs (0 = linke/untere Kante, 1 = rechte/"
-           "obere Kante). 'paper' wäre relativ zur gesamten Figure. "
-           "Für Subplot 1 lautet die Referenz 'x domain', für Subplot 2 'x2 domain', usw.", "body")]
+         T("6 · Hierarchisches Clustering der Heatmap-Zeilen", "h1"),
+         T("Die 19 Prädiktor-Zeilen werden so sortiert, dass ähnliche "
+           "Korrelationsmuster nebeneinander liegen:", "body"),
+         CODE("from scipy.cluster.hierarchy import linkage, leaves_list\n"
+              "from scipy.spatial.distance import pdist\n\n"
+              "dist  = pdist(r_matrix, metric='euclidean')  # paarweise Distanzen\n"
+              "order = leaves_list(linkage(dist, method='average'))"),
+         T("pdist liefert die kondensierte Distanzmatrix, linkage baut den "
+           "Dendrogramm-Baum (average linkage = UPGMA), leaves_list gibt die "
+           "Blattreihenfolge zurück — eine Permutation der Zeilenindizes, die "
+           "ähnliche Zeilen benachbart anordnet.", "body")]
 
     save_pdf("scatter_corr.pdf", s)
 
@@ -1197,6 +1152,7 @@ proto_generate_radars()
 proto_animate_html()
 proto_generator_itself()
 proto_dashboard()
-proto_parallel_micro()
+proto_build_regional()
+proto_build_mlm()
 proto_scatter_corr()
 print("\nFertig. Alle PDFs in scripts/learning_protocols/")

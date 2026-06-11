@@ -1,23 +1,42 @@
+"""Correlation figures (Correlations tab): heatmap + scatter with OLS fit.
+
+All correlations are computed on the ESS Round 11 (2023) country
+cross-section. Significance stars are based on Benjamini-Hochberg adjusted
+q-values across the full predictor x dimension test family, so the heatmap
+controls the false-discovery rate at 5 % instead of inflating Type-I error
+over ~76 simultaneous tests.
+"""
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-from scipy import stats
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from scipy import stats
 
-from data_pipeline import (
-    SCATTER_X_META, SCATTER_Y_META,
-    COUNTRIES, COUNTRY_FLAGS, BG_COLOR, hex_to_rgba,
-)
+import theme
+from data_pipeline import COUNTRY_FLAGS, SCATTER_X_META, SCATTER_Y_META
 
-# Quick lookup: col → (label, description)
+# Quick lookups
 _X_LABEL = {col: lbl for col, lbl, _ in SCATTER_X_META}
-_X_DESC  = {col: desc for col, _, desc in SCATTER_X_META}
-_Y_LABEL = {col: lbl for col, lbl, _ in SCATTER_Y_META}
-_Y_COLOR = {col: clr for col, _, clr in SCATTER_Y_META}
+_Y_LABEL = {col: lbl for col, lbl in SCATTER_Y_META}
+_Y_COLOR = {col: theme.DIM_COLORS[lbl] for col, lbl in SCATTER_Y_META}
+
+_MIN_N = 5   # minimum countries for a cell to be reported
 
 
-def _regress_ci(x: np.ndarray, y: np.ndarray, n_pts: int = 200):
-    """OLS regression line + 95 % parametric CI band."""
+def _regress_ci(x: np.ndarray, y: np.ndarray, n_pts: int = 200) -> dict | None:
+    """OLS regression line + 95 % parametric CI band.
+
+    Args:
+        x: Predictor values (may contain NaN).
+        y: Outcome values (may contain NaN).
+        n_pts: Resolution of the fitted line.
+
+    Returns:
+        Dict with fit arrays and r/p/n/slope, or None if fewer than 4
+        complete pairs.
+    """
     mask = np.isfinite(x) & np.isfinite(y)
     x, y = x[mask], y[mask]
     n = len(x)
@@ -25,307 +44,287 @@ def _regress_ci(x: np.ndarray, y: np.ndarray, n_pts: int = 200):
         return None
 
     slope, intercept, r, p, _ = stats.linregress(x, y)
-    x_fit  = np.linspace(x.min(), x.max(), n_pts)
-    y_fit  = slope * x_fit + intercept
+    x_fit = np.linspace(x.min(), x.max(), n_pts)
+    y_fit = slope * x_fit + intercept
 
-    # Parametric 95 % CI around the regression line
-    mse   = np.sum((y - (slope * x + intercept)) ** 2) / (n - 2)
-    se_y  = np.sqrt(mse)
-    x_bar = x.mean()
-    ss_x  = np.sum((x - x_bar) ** 2)
-    t_crit = stats.t.ppf(0.975, df=n - 2)
-    se_band = se_y * np.sqrt(1 / n + (x_fit - x_bar) ** 2 / ss_x)
-    ci_lo  = y_fit - t_crit * se_band
-    ci_hi  = y_fit + t_crit * se_band
+    mse     = np.sum((y - (slope * x + intercept)) ** 2) / (n - 2)
+    x_bar   = x.mean()
+    ss_x    = np.sum((x - x_bar) ** 2)
+    t_crit  = stats.t.ppf(0.975, df=n - 2)
+    se_band = np.sqrt(mse) * np.sqrt(1 / n + (x_fit - x_bar) ** 2 / ss_x)
 
-    return dict(x_fit=x_fit, y_fit=y_fit, ci_lo=ci_lo, ci_hi=ci_hi,
+    return dict(x_fit=x_fit, y_fit=y_fit,
+                ci_lo=y_fit - t_crit * se_band, ci_hi=y_fit + t_crit * se_band,
                 r=r, p=p, n=n, slope=slope)
 
 
-def _sig_label(p: float) -> str:
-    if p < 0.001:
+def _bh_qvalues(p_values: np.ndarray) -> np.ndarray:
+    """Benjamini-Hochberg FDR-adjusted q-values.
+
+    Args:
+        p_values: 1-D array of raw p-values (NaN allowed).
+
+    Returns:
+        Array of q-values, NaN where the input was NaN.
+    """
+    q = np.full_like(p_values, np.nan, dtype=float)
+    valid = np.where(np.isfinite(p_values))[0]
+    if valid.size == 0:
+        return q
+    p = p_values[valid]
+    m = p.size
+    order = np.argsort(p)
+    ranked = p[order] * m / (np.arange(m) + 1)
+    # Enforce monotonicity from the largest p downwards
+    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
+    q_valid = np.empty(m)
+    q_valid[order] = np.clip(ranked, 0, 1)
+    q[valid] = q_valid
+    return q
+
+
+def compute_test_family(df: pd.DataFrame) -> dict[tuple[str, str], dict]:
+    """All predictor x dimension correlation tests with BH q-values.
+
+    Args:
+        df: Country cross-section (df_scatter).
+
+    Returns:
+        {(x_col, y_col): {'r', 'p', 'q', 'n'}} for every testable pair.
+    """
+    keys, results = [], []
+    for x_col, _, _ in SCATTER_X_META:
+        for y_col, _ in SCATTER_Y_META:
+            if x_col not in df.columns or y_col not in df.columns:
+                continue
+            reg = _regress_ci(df[x_col].values.astype(float),
+                              df[y_col].values.astype(float), n_pts=2)
+            if reg and reg['n'] >= _MIN_N:
+                keys.append((x_col, y_col))
+                results.append({'r': reg['r'], 'p': reg['p'], 'n': reg['n']})
+    qs = _bh_qvalues(np.array([res['p'] for res in results]))
+    for res, q in zip(results, qs):
+        res['q'] = float(q)
+    return dict(zip(keys, results))
+
+
+def _sig_label(q: float) -> str:
+    """Significance stars from the FDR-adjusted q-value."""
+    if q < 0.001:
         return '***'
-    if p < 0.01:
+    if q < 0.01:
         return '**'
-    if p < 0.05:
+    if q < 0.05:
         return '*'
     return ''
 
 
-def _add_scatter_to(fig, df: pd.DataFrame, x_col: str, y_col: str,
-                    color: str, row=None, col=None,
-                    show_reg: bool = True):
-    """Add country scatter + regression. row/col=None → plain figure (no subplot grid)."""
-    x = df[x_col].values.astype(float)
-    y = df[y_col].values.astype(float)
-    codes  = df['cntry'].values
-    names  = df['country_name'].values
-    flags  = np.array([COUNTRY_FLAGS.get(c, '') for c in codes])
-
-    # Subplot kwargs - omit row/col for plain figures
-    sk = dict(row=row, col=col) if row is not None else {}
-
-    # CI band + regression line
-    reg = _regress_ci(x, y) if show_reg else None
-    if reg:
-        band_color = hex_to_rgba(color, 0.10)
-        fig.add_trace(go.Scatter(
-            x=list(reg['x_fit']), y=list(reg['ci_hi']),
-            mode='lines', line=dict(width=0),
-            showlegend=False, hoverinfo='skip',
-        ), **sk)
-        fig.add_trace(go.Scatter(
-            x=list(reg['x_fit']), y=list(reg['ci_lo']),
-            mode='lines', line=dict(width=0),
-            fill='tonexty', fillcolor=band_color,
-            showlegend=False, hoverinfo='skip',
-        ), **sk)
-        fig.add_trace(go.Scatter(
-            x=list(reg['x_fit']), y=list(reg['y_fit']),
-            mode='lines',
-            line=dict(color=hex_to_rgba(color, 0.85), width=2.2),
-            showlegend=False, hoverinfo='skip',
-        ), **sk)
-
-    # Country points: flag emoji as visual, transparent marker for hover
-    valid = np.isfinite(x) & np.isfinite(y)
-    x_lbl = _X_LABEL.get(x_col, x_col)
-    y_lbl = _Y_LABEL.get(y_col, y_col)
-
-    # Emoji flags (visual layer - no hover)
-    fig.add_trace(go.Scatter(
-        x=x[valid], y=y[valid],
-        mode='text',
-        text=flags[valid].tolist(),
-        textfont=dict(size=10),
-        textposition='middle center',
-        hoverinfo='skip',
-        showlegend=False,
-    ), **sk)
-
-    # Invisible markers on top (hover layer only)
-    fig.add_trace(go.Scatter(
-        x=x[valid], y=y[valid],
-        mode='markers',
-        marker=dict(size=12, opacity=0, color='rgba(0,0,0,0)'),
-        customdata=np.stack([names[valid], flags[valid],
-                             x[valid], y[valid]], axis=1),
-        hovertemplate=(
-            '%{customdata[1]}  <b>%{customdata[0]}</b><br>'
-            f'{x_lbl}: %{{customdata[2]:.3f}}<br>'
-            f'{y_lbl} (Δ): %{{customdata[3]:.3f}}'
-            '<extra></extra>'
-        ),
-        showlegend=False,
-    ), **sk)
-
-    # r / p annotation for subplot grids (row/col provided)
-    if reg and row is not None:
-        sig   = _sig_label(reg['p'])
-        ax_i  = (row - 1) * 2 + col
-        xref  = 'x domain'       if ax_i == 1 else f'x{ax_i} domain'
-        yref  = 'y domain'       if ax_i == 1 else f'y{ax_i} domain'
-        fig.add_annotation(
-            text=f"r = {reg['r']:+.2f}{sig}  p = {reg['p']:.3f}",
-            font=dict(size=9, color='#4a5568'),
-            showarrow=False,
-            xref=xref, yref=yref,
-            x=0.98, y=0.98,
-            xanchor='right', yanchor='top',
-            bgcolor='rgba(237,240,247,0.85)',
-            borderpad=3,
-        )
-
-    return reg
-
-
 def _hclust_order(matrix: np.ndarray) -> list[int]:
-    """Return row indices reordered by hierarchical clustering (average linkage).
-
-    NaN values are replaced with 0 before clustering so missing data doesn't
-    break the distance computation.
-    """
-    from scipy.cluster.hierarchy import linkage, leaves_list
+    """Row order from hierarchical clustering (average linkage, NaN -> 0)."""
+    from scipy.cluster.hierarchy import leaves_list, linkage
     from scipy.spatial.distance import pdist
     m = np.nan_to_num(matrix, nan=0.0)
     if m.shape[0] < 2:
         return list(range(m.shape[0]))
-    dist = pdist(m, metric='euclidean')
-    Z    = linkage(dist, method='average')
-    return list(leaves_list(Z))
+    return list(leaves_list(linkage(pdist(m, metric='euclidean'),
+                                    method='average')))
 
 
-def make_corr_heatmap(df: pd.DataFrame, year) -> go.Figure:
-    """Correlation heatmap: all X predictors × 4 Schwartz dimensions.
+def make_corr_heatmap(df: pd.DataFrame) -> go.Figure:
+    """Correlation heatmap: all predictors x 4 Schwartz dimensions.
 
-    Rows (predictors) are reordered by hierarchical clustering so that
-    predictors with similar correlation patterns appear together.
-    Cells show Pearson r with significance stars.
+    Rows are reordered by hierarchical clustering; stars reflect BH
+    FDR-adjusted q-values (the legend in the sidebar explains this).
+
+    Args:
+        df: Country cross-section (df_scatter).
+
+    Returns:
+        Plotly heatmap figure.
     """
-    sub = _prepare(df, year)
-
+    family   = compute_test_family(df)
     x_cols   = [col for col, _, _ in SCATTER_X_META]
     x_labels = [lbl for _, lbl, _ in SCATTER_X_META]
-    y_cols   = [col for col, _, _ in SCATTER_Y_META]
-    y_labels = [lbl for _, lbl, _ in SCATTER_Y_META]
+    y_cols   = [col for col, _ in SCATTER_Y_META]
+    y_labels = [lbl for _, lbl in SCATTER_Y_META]
 
-    # Build the full r-matrix first (rows = predictors, cols = Schwartz dims)
     z_raw, text_raw, hover_raw = [], [], []
     for x_col, x_lbl in zip(x_cols, x_labels):
         row_z, row_t, row_h = [], [], []
         for y_col, y_lbl in zip(y_cols, y_labels):
-            xv = sub[x_col].values.astype(float) if x_col in sub.columns else np.array([])
-            yv = sub[y_col].values.astype(float) if y_col in sub.columns else np.array([])
-            reg = _regress_ci(xv, yv, n_pts=2)
-            if reg and reg['n'] >= 5:
-                sig = _sig_label(reg['p'])
-                row_z.append(reg['r'])
-                row_t.append(f"{reg['r']:+.2f}{sig}" if sig else f"{reg['r']:+.2f}")
+            res = family.get((x_col, y_col))
+            if res:
+                sig = _sig_label(res['q'])
+                row_z.append(res['r'])
+                row_t.append(f"{res['r']:+.2f}{sig}")
                 row_h.append(
                     f"<b>{x_lbl}</b> x <b>{y_lbl}</b><br>"
-                    f"r = {reg['r']:+.3f}{sig}   p = {reg['p']:.3f}   N = {reg['n']}"
+                    f"r = {res['r']:+.3f}{sig}   N = {res['n']}<br>"
+                    f"p = {res['p']:.3f}   q (FDR) = {res['q']:.3f}"
                 )
             else:
                 row_z.append(None)
                 row_t.append('n/a')
-                row_h.append(f"<b>{x_lbl}</b> x <b>{y_lbl}</b><br>Insufficient data")
+                row_h.append(f'<b>{x_lbl}</b> x <b>{y_lbl}</b><br>Insufficient data')
         z_raw.append(row_z)
         text_raw.append(row_t)
         hover_raw.append(row_h)
 
-    # Reorder rows by hierarchical clustering on the r-matrix
-    z_np  = np.array([[v if v is not None else np.nan for v in row] for row in z_raw])
+    z_np  = np.array([[v if v is not None else np.nan for v in row]
+                      for row in z_raw])
     order = _hclust_order(z_np)
 
-    z         = [z_raw[i]    for i in order]
-    text_mat  = [text_raw[i] for i in order]
-    hover_mat = [hover_raw[i] for i in order]
-    y_labels_ordered = [x_labels[i] for i in order]
-
-    colorscale = [
-        [0.00, '#2166ac'],
-        [0.25, '#92c5de'],
-        [0.50, '#f7f7f7'],
-        [0.75, '#f4a582'],
-        [1.00, '#d6604d'],
-    ]
-
     fig = go.Figure(go.Heatmap(
-        z=z,
+        z=[z_raw[i] for i in order],
         x=y_labels,
-        y=y_labels_ordered,
-        text=text_mat,
-        customdata=hover_mat,
+        y=[x_labels[i] for i in order],
+        text=[text_raw[i] for i in order],
+        customdata=[hover_raw[i] for i in order],
         texttemplate='%{text}',
-        textfont=dict(size=10, color='#1a2840'),
-        colorscale=colorscale,
+        textfont=dict(size=10, color=theme.INK),
+        colorscale=theme.HEATMAP_SCALE,
         zmid=0, zmin=-1, zmax=1,
         showscale=True,
-        colorbar=dict(
-            title=dict(text='Pearson r', side='right'),
-            thickness=12, len=0.7, tickfont=dict(size=9),
-        ),
+        colorbar=dict(title=dict(text='Pearson r', side='right'),
+                      thickness=12, len=0.7, tickfont=dict(size=9)),
         hovertemplate='%{customdata}<extra></extra>',
     ))
-
-    n_rows = len(x_cols)
     fig.update_layout(
-        paper_bgcolor=BG_COLOR,
-        plot_bgcolor=BG_COLOR,
-        height=max(560, 28 * n_rows + 80),  # ~28px per row
+        height=max(560, 28 * len(x_cols) + 80),
         margin=dict(t=30, b=10, l=220, r=60),
-        xaxis=dict(
-            side='top',
-            tickfont=dict(size=11, color='#1a2840'),
-            tickangle=0,
-        ),
-        yaxis=dict(
-            autorange='reversed',
-            tickfont=dict(size=10, color='#1a2840'),
-        ),
-        hoverlabel=dict(bgcolor='white', font_size=12),
+        xaxis=dict(side='top', tickfont=dict(size=11, color=theme.INK),
+                   tickangle=0),
+        yaxis=dict(autorange='reversed',
+                   tickfont=dict(size=10, color=theme.INK)),
     )
     return fig
 
 
-def _prepare(df: pd.DataFrame, year) -> pd.DataFrame:
-    """Filter to one ESS round or aggregate country means across all rounds."""
-    if year == 'all':
-        return df.groupby('cntry').agg(
-            country_name=('country_name', 'first'),
-            **{col: (col, 'mean') for col, _, _ in SCATTER_X_META if col in df.columns},
-            **{col: (col, 'mean') for col, _, _ in SCATTER_Y_META if col in df.columns},
-        ).reset_index()
-    return df[df['year'] == year].copy()
+def _add_scatter_to(fig: go.Figure, df: pd.DataFrame, x_col: str, y_col: str,
+                    color: str, row: int | None = None,
+                    col: int | None = None) -> dict | None:
+    """Add country flags scatter + regression band to a (sub)figure."""
+    x = df[x_col].values.astype(float)
+    y = df[y_col].values.astype(float)
+    codes = df['cntry'].values
+    names = df['country_name'].values
+    flags = np.array([COUNTRY_FLAGS.get(c, '') for c in codes])
+    sk = dict(row=row, col=col) if row is not None else {}
+
+    reg = _regress_ci(x, y)
+    if reg:
+        fig.add_trace(go.Scatter(
+            x=list(reg['x_fit']), y=list(reg['ci_hi']),
+            mode='lines', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'), **sk)
+        fig.add_trace(go.Scatter(
+            x=list(reg['x_fit']), y=list(reg['ci_lo']),
+            mode='lines', line=dict(width=0),
+            fill='tonexty', fillcolor=theme.hex_to_rgba(color, 0.10),
+            showlegend=False, hoverinfo='skip'), **sk)
+        fig.add_trace(go.Scatter(
+            x=list(reg['x_fit']), y=list(reg['y_fit']),
+            mode='lines',
+            line=dict(color=theme.hex_to_rgba(color, 0.85), width=2.2),
+            showlegend=False, hoverinfo='skip'), **sk)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    fig.add_trace(go.Scatter(
+        x=x[valid], y=y[valid],
+        mode='text',
+        text=flags[valid].tolist(),
+        textfont=dict(size=11),
+        hoverinfo='skip', showlegend=False), **sk)
+    fig.add_trace(go.Scatter(
+        x=x[valid], y=y[valid],
+        mode='markers',
+        marker=dict(size=14, opacity=0, color='rgba(0,0,0,0)'),
+        customdata=np.stack([names[valid], flags[valid],
+                             x[valid], y[valid]], axis=1),
+        hovertemplate=(
+            '%{customdata[1]}  <b>%{customdata[0]}</b><br>'
+            f'{_X_LABEL.get(x_col, x_col)}: %{{customdata[2]:.3f}}<br>'
+            f'{_Y_LABEL.get(y_col, y_col)} (Δ): %{{customdata[3]:.3f}}'
+            '<extra></extra>'),
+        showlegend=False), **sk)
+    return reg
 
 
-def make_scatter_single(df: pd.DataFrame, x_col: str, y_col: str,
-                        year=2023) -> go.Figure:
-    """Single scatter: one X variable vs. one Schwartz dimension for one ESS round."""
-    sub    = _prepare(df, year)
-    color  = _Y_COLOR.get(y_col, '#1a5fb4')
-    x_lbl  = _X_LABEL.get(x_col, x_col)
-    y_lbl  = _Y_LABEL.get(y_col, y_col)
+def _stats_annotation(family: dict, x_col: str, y_col: str) -> str:
+    """One-line r / p / q / N annotation for one test."""
+    res = family.get((x_col, y_col))
+    if not res:
+        return ''
+    sig = _sig_label(res['q'])
+    return (f"r = {res['r']:+.2f}{sig}   p = {res['p']:.3f}   "
+            f"q = {res['q']:.3f}   N = {res['n']}")
+
+
+def make_scatter_single(df: pd.DataFrame, x_col: str, y_col: str) -> go.Figure:
+    """Single scatter: one predictor vs. one Schwartz dimension.
+
+    Args:
+        df: Country cross-section (df_scatter).
+        x_col: Predictor column.
+        y_col: Dimension column.
+
+    Returns:
+        Plotly scatter figure with OLS fit, CI band, and FDR-aware stats.
+    """
+    family = compute_test_family(df)
+    color  = _Y_COLOR.get(y_col, theme.PRIMARY)
 
     fig = go.Figure()
-    reg = _add_scatter_to(fig, sub, x_col, y_col, color)
-
-    if reg:
-        sig = _sig_label(reg['p'])
+    _add_scatter_to(fig, df, x_col, y_col, color)
+    note = _stats_annotation(family, x_col, y_col)
+    if note:
         fig.add_annotation(
-            text=f"r = {reg['r']:+.2f}{sig}   p = {reg['p']:.3f}   N = {reg['n']}",
-            xref='paper', yref='paper', x=0.98, y=0.98,
-            xanchor='right', yanchor='top',
-            showarrow=False,
-            font=dict(size=10.5, color='#4a5568'),
-            bgcolor='rgba(237,240,247,0.85)',
-            borderpad=4,
-        )
+            text=note, xref='paper', yref='paper', x=0.98, y=0.98,
+            xanchor='right', yanchor='top', showarrow=False,
+            font=dict(size=10.5, color=theme.MUTED),
+            bgcolor='rgba(241,244,250,0.9)', borderpad=4)
 
-    fig.update_xaxes(
-        title_text=x_lbl,
-        title_font=dict(size=12, color='#1a2840'),
-        gridcolor='#e8edf5', zerolinecolor='#e8edf5',
-    )
-    fig.update_yaxes(
-        title_text=f'{y_lbl} (Δ-score)',
-        title_font=dict(size=12, color=color),
-        gridcolor='#e8edf5', zerolinecolor='#d0d8e8',
-        zeroline=True, zerolinewidth=1.5,
-    )
-    fig.update_layout(
-        paper_bgcolor=BG_COLOR, plot_bgcolor='#edf1f8',
-        height=520, margin=dict(t=30, b=60, l=80, r=40),
-        hoverlabel=dict(bgcolor='white', font_size=12),
-    )
+    fig.update_xaxes(title_text=_X_LABEL.get(x_col, x_col))
+    fig.update_yaxes(title_text=f'{_Y_LABEL.get(y_col, y_col)} (Δ-score)',
+                     title_font=dict(color=color),
+                     zeroline=True, zerolinewidth=1.5)
+    fig.update_layout(height=520, margin=dict(t=30, b=60, l=80, r=40))
     return fig
 
 
-def make_scatter_all(df: pd.DataFrame, x_col: str, year=2023) -> go.Figure:
-    """2×2 subplot grid: one X variable vs. all 4 Schwartz dimensions."""
-    sub   = _prepare(df, year)
-    x_lbl = _X_LABEL.get(x_col, x_col)
+def make_scatter_all(df: pd.DataFrame, x_col: str) -> go.Figure:
+    """2x2 grid: one predictor vs. all four Schwartz dimensions.
 
-    fig = make_subplots(rows=2, cols=2, shared_xaxes=False,
+    Args:
+        df: Country cross-section (df_scatter).
+        x_col: Predictor column.
+
+    Returns:
+        Plotly subplot figure.
+    """
+    family = compute_test_family(df)
+    fig = make_subplots(rows=2, cols=2,
                         horizontal_spacing=0.12, vertical_spacing=0.16)
 
-    for (y_col, y_lbl, color), (r, c) in zip(SCATTER_Y_META, [(1,1),(1,2),(2,1),(2,2)]):
-        _add_scatter_to(fig, sub, x_col, y_col, color, r, c)
-        fig.update_xaxes(title_text=x_lbl, title_font=dict(size=10),
-                         gridcolor='#e8edf5', row=r, col=c)
+    for (y_col, y_lbl), (r, c) in zip(SCATTER_Y_META,
+                                      [(1, 1), (1, 2), (2, 1), (2, 2)]):
+        color = _Y_COLOR[y_col]
+        _add_scatter_to(fig, df, x_col, y_col, color, r, c)
+        note = _stats_annotation(family, x_col, y_col)
+        if note:
+            ax_i = (r - 1) * 2 + c
+            ref  = '' if ax_i == 1 else str(ax_i)
+            fig.add_annotation(
+                text=note, font=dict(size=9, color=theme.MUTED),
+                showarrow=False,
+                xref=f'x{ref} domain', yref=f'y{ref} domain',
+                x=0.98, y=0.98, xanchor='right', yanchor='top',
+                bgcolor='rgba(241,244,250,0.9)', borderpad=3)
+        fig.update_xaxes(title_text=_X_LABEL.get(x_col, x_col),
+                         title_font=dict(size=10), row=r, col=c)
         fig.update_yaxes(title_text=f'{y_lbl} (Δ)',
                          title_font=dict(size=10, color=color),
-                         gridcolor='#e8edf5', zerolinecolor='#d0d8e8',
                          zeroline=True, zerolinewidth=1.2, row=r, col=c)
 
-    fig.update_layout(
-        paper_bgcolor=BG_COLOR, plot_bgcolor='#edf1f8',
-        height=720, margin=dict(t=30, b=50, l=80, r=40),
-        hoverlabel=dict(bgcolor='white', font_size=12),
-    )
-    for i in range(1, 5):
-        s = '' if i == 1 else str(i)
-        fig.layout[f'xaxis{s}'].update(gridcolor='#e8edf5')
-        fig.layout[f'yaxis{s}'].update(gridcolor='#e8edf5')
-
+    fig.update_layout(height=720, margin=dict(t=30, b=50, l=80, r=40))
     return fig

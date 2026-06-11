@@ -1,22 +1,48 @@
-from pathlib import Path
+"""Data layer for the Human Values dashboard - ESS Round 11 (2023) only.
+
+Responsibilities:
+  - Constants: country metadata, Schwartz value model, variable metadata
+  - Build functions: compute all derived datasets from the raw ESS11 CSV
+    (run locally via export_precomputed.py; raw microdata never deployed)
+  - Load functions: read the small precomputed CSVs at app start (server mode)
+  - Analysis helpers: PCA + K-Means with silhouette validation
+
+Methodology (see the About tab for the user-facing version):
+  - Full PVQ-21 item battery with the standard ESS item-to-value mapping
+  - Items are reverse-coded (7 - x) so higher = stronger endorsement
+  - Scores are ipsatized at the person level (centred at each respondent's
+    own mean across all valid items) following Schwartz's recommendation
+  - All aggregates use the ESS analysis weight (anweight)
+"""
+from __future__ import annotations
+
 import glob
-import re
-import zipfile
-import xml.etree.ElementTree as ET
+import json
+import logging
+from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-_THIS_DIR = Path(__file__).parent
-_DATA_DIR  = _THIS_DIR.parent / "data"
-ESS_DIR    = _DATA_DIR / "raw" / "ess"
-MAKRO_DIR  = _DATA_DIR / "raw" / "makro"
+log = logging.getLogger(__name__)
 
-DATA_PATH   = ESS_DIR / "ess_schwartz_aggregated.csv"
-VDEM_PATH   = MAKRO_DIR / "V-Dem-CY-FullOthers-v15_csv" / "V-Dem-CY-Full+Others-v15.csv"
-GINI_PATH   = MAKRO_DIR / "gini_index_unvollständig.xlsx"
-UNEMP_PATH  = MAKRO_DIR / "unemployment.xlsx"
+# ── Paths ──────────────────────────────────────────────────────────────────────
+_THIS_DIR       = Path(__file__).parent
+_DATA_DIR       = _THIS_DIR.parent / 'data'
+ESS11_DIR       = _DATA_DIR / 'raw' / 'ess' / 'ESS11'
+MACRO_CSV       = _DATA_DIR / 'merged_datasets' / 'macro_schwartz_analysis_data.csv'
+PRECOMPUTED_DIR = _THIS_DIR / 'precomputed'
 
+# ── Survey constants ───────────────────────────────────────────────────────────
+ESS_YEAR  = 2023   # ESS Round 11 reference year
+ESS_ROUND = 11
+
+# Quality thresholds
+MIN_VALID_PVQ = 16   # respondent needs >= 16 of 21 valid PVQ items
+MIN_REGION_N  = 50   # minimum unweighted respondents per NUTS region
+MIN_GROUP_N   = 30   # minimum unweighted respondents per gradient group
+
+# ── Country metadata ───────────────────────────────────────────────────────────
 COUNTRIES = {
     'AL': 'Albania',        'AT': 'Austria',        'BE': 'Belgium',
     'BG': 'Bulgaria',       'CH': 'Switzerland',    'CY': 'Cyprus',
@@ -33,6 +59,13 @@ COUNTRIES = {
     'TR': 'Türkiye',        'UA': 'Ukraine',        'XK': 'Kosovo',
 }
 
+# The 30 countries fielded in ESS Round 11
+ESS11_COUNTRIES = [
+    'AT', 'BE', 'BG', 'CH', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR',
+    'GB', 'GR', 'HR', 'HU', 'IE', 'IL', 'IS', 'IT', 'LT', 'LV',
+    'ME', 'NL', 'NO', 'PL', 'PT', 'RS', 'SE', 'SI', 'SK', 'UA',
+]
+
 COUNTRY_FLAGS = {
     'AL': '🇦🇱', 'AT': '🇦🇹', 'BE': '🇧🇪', 'BG': '🇧🇬',
     'CH': '🇨🇭', 'CY': '🇨🇾', 'CZ': '🇨🇿', 'DE': '🇩🇪',
@@ -46,123 +79,14 @@ COUNTRY_FLAGS = {
     'TR': '🇹🇷', 'UA': '🇺🇦', 'XK': '🇽🇰',
 }
 
-# V-Dem country names → ISO-2
-_VDEM_NAME_TO_ISO2 = {v: k for k, v in COUNTRIES.items()}
-
-# Unemployment xlsx ISO-3 → ISO-2
-_UNEMP_ISO3_TO_ISO2 = {
-    'ALB': 'AL', 'AUT': 'AT', 'BEL': 'BE', 'BGR': 'BG',
-    'CHE': 'CH', 'CYP': 'CY', 'CZE': 'CZ', 'DEU': 'DE',
-    'DNK': 'DK', 'EST': 'EE', 'ESP': 'ES', 'FIN': 'FI',
-    'FRA': 'FR', 'GBR': 'GB', 'GRC': 'GR', 'HRV': 'HR',
-    'HUN': 'HU', 'IRL': 'IE', 'ISR': 'IL', 'ISL': 'IS',
-    'ITA': 'IT', 'LTU': 'LT', 'LUX': 'LU', 'LVA': 'LV',
-    'MNE': 'ME', 'MKD': 'MK', 'NLD': 'NL', 'NOR': 'NO',
-    'POL': 'PL', 'PRT': 'PT', 'ROU': 'RO', 'SRB': 'RS',
-    'RUS': 'RU', 'SWE': 'SE', 'SVN': 'SI', 'SVK': 'SK',
-    'TUR': 'TR', 'UKR': 'UA', 'XKX': 'XK',
-}
-
-# Gini xlsx country names → ISO-2
-_GINI_NAME_TO_ISO2 = {
-    'Albania': 'AL',        'Austria': 'AT',         'Belgium': 'BE',
-    'Bulgaria': 'BG',       'Switzerland': 'CH',     'Cyprus': 'CY',
-    'Czech Republic': 'CZ', 'Czechia': 'CZ',         'Germany': 'DE',
-    'Denmark': 'DK',        'Estonia': 'EE',         'Spain': 'ES',
-    'Finland': 'FI',        'France': 'FR',          'United Kingdom': 'GB',
-    'Greece': 'GR',         'Croatia': 'HR',         'Hungary': 'HU',
-    'Ireland': 'IE',        'Israel': 'IL',          'Iceland': 'IS',
-    'Italy': 'IT',          'Lithuania': 'LT',       'Luxembourg': 'LU',
-    'Latvia': 'LV',         'Montenegro': 'ME',      'North Macedonia': 'MK',
-    'Netherlands': 'NL',    'Norway': 'NO',          'Poland': 'PL',
-    'Portugal': 'PT',       'Romania': 'RO',         'Serbia': 'RS',
-    'Russia': 'RU',         'Sweden': 'SE',          'Slovenia': 'SI',
-    'Slovak Republic': 'SK','Slovakia': 'SK',         'Turkey': 'TR',         'Türkiye': 'TR',
-    'Ukraine': 'UA',        'Kosovo': 'XK',
-}
-
-YEAR_TO_ROUND = {
-    2002: 1, 2004: 2, 2006: 3, 2008: 4, 2010: 5,
-    2012: 6, 2014: 7, 2016: 8, 2018: 9, 2020: 10, 2023: 11,
-}
-ROUND_TO_YEAR = {v: k for k, v in YEAR_TO_ROUND.items()}
-ALL_YEARS  = sorted(YEAR_TO_ROUND.keys())
-ALL_ROUNDS = sorted(ROUND_TO_YEAR.keys())
-
-VALUE_KEYS = ['SD', 'UN', 'BE', 'TR', 'CO', 'SE', 'PO', 'AC', 'HE', 'ST']
-VALUE_LABELS = {
-    'SD': 'Self-Direction', 'UN': 'Universalism', 'BE': 'Benevolence',
-    'TR': 'Tradition',      'CO': 'Conformity',   'SE': 'Security',
-    'PO': 'Power',          'AC': 'Achievement',  'HE': 'Hedonism',
-    'ST': 'Stimulation',
-}
-
-# Updated GNOME-palette colors (brighter, per task specification)
-DIM_COLORS = {
-    'Openness to Change': '#3584e4',
-    'Self-Transcendence': '#9141ac',
-    'Conservation':       '#2ec27e',
-    'Self-Enhancement':   '#e01b24',
-}
-DIMS = list(DIM_COLORS.keys())
-
-DIM_COLS = {
-    'Openness to Change': 'dim_openness',
-    'Self-Transcendence': 'dim_transcendence',
-    'Conservation':       'dim_conservation',
-    'Self-Enhancement':   'dim_enhancement',
-}
-
-VALUE_TO_DIM = {
-    'SD': 'Openness to Change', 'HE': 'Openness to Change', 'ST': 'Openness to Change',
-    'UN': 'Self-Transcendence', 'BE': 'Self-Transcendence',
-    'TR': 'Conservation',       'CO': 'Conservation',       'SE': 'Conservation',
-    'PO': 'Self-Enhancement',   'AC': 'Self-Enhancement',
-}
-
-# Macro columns for parallel coordinates (in order)
-MACRO_COLS = [
-    ('dim_openness',      'Openness\nto Change'),
-    ('dim_transcendence', 'Self-\nTranscendence'),
-    ('dim_conservation',  'Conservation'),
-    ('dim_enhancement',   'Self-\nEnhancement'),
-    ('ldi',               'Liberal\nDemocracy'),
-    ('gini',              'Gini Index\n(×100)'),
-    ('unemployment_rate', 'Unemployment\n(%)'),
-    ('migration_share',   'Migration\nBackground (%)'),
-    ('mean_eduyrs',       'Years\nof Education'),
-]
-
-_PALETTE = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-    '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
-    '#c49c94', '#f7b6d2', '#c7c7c7', '#dbdb8d', '#9edae5',
-    '#393b79', '#637939', '#8c6d31', '#843c39', '#7b4173',
-    '#bd9e39', '#d6616b', '#ce6dbd', '#6b6ecf', '#b5cf6b',
-    '#e6550d', '#31a354', '#756bb1', '#636363', '#969696',
-    '#6baed6', '#74c476', '#fd8d3c', '#9ecae1', '#a1d99b',
-]
-COUNTRY_COLORS = {c: _PALETTE[i] for i, c in enumerate(sorted(COUNTRIES.keys()))}
-
-BG_COLOR    = '#f4f6fb'
-RADAR_BG    = '#e8edf5'
-DELTA_RANGE = [-1.4, 1.75]
-
-# ── Country profile info ───────────────────────────────────────────────────────
 # (capital, population_millions, area_km2, political_system, eu_status)
-# Population and area: approximate 2023 figures.
-# EU status: year of accession, 'EEA', or 'No'.
 COUNTRY_INFO = {
-    'AL': ('Tirana',        2.8,    28748,   'Parliamentary Republic',              'Candidate'),
     'AT': ('Vienna',        9.1,    83871,   'Federal Parliamentary Republic',       'EU 1995'),
     'BE': ('Brussels',     11.6,    30528,   'Federal Constitutional Monarchy',      'EU 1952'),
     'BG': ('Sofia',         6.5,   110879,   'Parliamentary Republic',              'EU 2007'),
     'CH': ('Bern',          8.7,    41285,   'Federal Council / Direct Democracy',  'EEA'),
     'CY': ('Nicosia',       1.2,     9251,   'Presidential Republic',               'EU 2004'),
-    'CZ': ('Prague',       10.9,    78866,   'Parliamentary Republic',              'EU 2004'),
     'DE': ('Berlin',       84.4,   357114,   'Federal Parliamentary Republic',       'EU 1952'),
-    'DK': ('Copenhagen',    5.9,    42924,   'Constitutional Monarchy',             'EU 1973'),
     'EE': ('Tallinn',       1.4,    45228,   'Parliamentary Republic',              'EU 2004'),
     'ES': ('Madrid',       47.4,   505990,   'Constitutional Monarchy',             'EU 1986'),
     'FI': ('Helsinki',      5.5,   338145,   'Parliamentary Republic',              'EU 1995'),
@@ -176,959 +100,536 @@ COUNTRY_INFO = {
     'IS': ('Reykjavik',     0.4,   103000,   'Parliamentary Republic',              'EEA'),
     'IT': ('Rome',         59.1,   301340,   'Parliamentary Republic',              'EU 1952'),
     'LT': ('Vilnius',       2.8,    65300,   'Parliamentary Republic',              'EU 2004'),
-    'LU': ('Luxembourg',    0.7,     2586,   'Constitutional Monarchy (Grand Duchy)', 'EU 1952'),
     'LV': ('Riga',          1.8,    64589,   'Parliamentary Republic',              'EU 2004'),
     'ME': ('Podgorica',     0.6,    13812,   'Parliamentary Republic',              'Candidate'),
-    'MK': ('Skopje',        2.1,    25713,   'Parliamentary Republic',              'Candidate'),
     'NL': ('Amsterdam',    17.8,    41543,   'Constitutional Monarchy',             'EU 1952'),
     'NO': ('Oslo',          5.5,   385207,   'Constitutional Monarchy',             'EEA'),
     'PL': ('Warsaw',       38.0,   312696,   'Parliamentary Republic',              'EU 2004'),
     'PT': ('Lisbon',       10.3,    92212,   'Semi-Presidential Republic',          'EU 1986'),
-    'RO': ('Bucharest',    19.0,   238397,   'Semi-Presidential Republic',          'EU 2007'),
     'RS': ('Belgrade',      6.8,    77474,   'Parliamentary Republic',              'Candidate'),
-    'RU': ('Moscow',      146.0, 17098242,   'Federal Semi-Presidential Republic',  'No'),
     'SE': ('Stockholm',    10.5,   450295,   'Constitutional Monarchy',             'EU 1995'),
     'SI': ('Ljubljana',     2.1,    20273,   'Parliamentary Republic',              'EU 2004'),
     'SK': ('Bratislava',    5.5,    49035,   'Parliamentary Republic',              'EU 2004'),
-    'TR': ('Ankara',       85.3,   783356,   'Presidential Republic',               'Candidate (frozen)'),
     'UA': ('Kyiv',         43.5,   603550,   'Semi-Presidential Republic',          'Candidate'),
-    'XK': ('Pristina',      1.8,    10887,   'Parliamentary Republic',              'No'),
 }
 
-# ── Scatter / Correlation analysis ────────────────────────────────────────────
-
-SCATTER_PATH = (
-    _DATA_DIR / 'merged_datasets' / 'macro_schwartz_analysis_data.csv'
-)
-
-# Real data patches for wb_gini - fetched 2026-04-28 from World Bank API and
-# Eurostat EU-SILC to fill gaps in the base CSV.
-# (cntry, ess_year): gini_value, source_note
-_GINI_PATCHES = {
-    # ESS 2002: WB has no 2002 survey for these countries - use nearest year
-    ('BE', 2002): (28.1, 'World Bank 2003'),
-    ('ES', 2002): (31.8, 'World Bank 2003'),
-    ('FI', 2002): (27.7, 'World Bank 2003'),
-    ('NL', 2002): (29.8, 'World Bank 2004'),   # no 2002/2003 available
-    ('NO', 2002): (27.6, 'World Bank 2003'),
-    ('PT', 2002): (38.8, 'World Bank 2003'),
-    # HU 2018-2023: WB discontinued after 2017 → Eurostat EU-SILC
-    ('HU', 2018): (28.7, 'Eurostat EU-SILC 2018'),
-    ('HU', 2020): (28.2, 'Eurostat EU-SILC 2020'),
-    ('HU', 2023): (28.6, 'Eurostat EU-SILC 2023 (series break)'),
-    # End-of-series: forward-carry last available WB value
-    ('CH', 2023): (33.8, 'World Bank 2022'),
-    ('DE', 2023): (33.7, 'World Bank 2022'),
-    ('NL', 2023): (25.7, 'World Bank 2021'),
+# ── Schwartz value model ───────────────────────────────────────────────────────
+VALUE_KEYS = ['SD', 'UN', 'BE', 'TR', 'CO', 'SE', 'PO', 'AC', 'HE', 'ST']
+VALUE_LABELS = {
+    'SD': 'Self-Direction', 'UN': 'Universalism', 'BE': 'Benevolence',
+    'TR': 'Tradition',      'CO': 'Conformity',   'SE': 'Security',
+    'PO': 'Power',          'AC': 'Achievement',  'HE': 'Hedonism',
+    'ST': 'Stimulation',
 }
 
-# (column, short label, hover description)
-SCATTER_X_META = [
-    ('trust_mean',            'Social Trust',            'ESS ppltrst - interpersonal trust (0-10)'),
-    ('religiosity_mean',      'Religiosity',             'ESS rlgdgr - self-rated religiosity (0-10)'),
-    ('eduyrs_mean',           'Education Years',         'ESS eduyrs - mean full-time education years'),
-    ('safety_mean',           'Safety After Dark',       'ESS aesfdrk - 1=very safe, 4=very unsafe'),
-    ('lrscale_mean',          'Left-Right Scale',        'ESS lrscale - 0=far left, 10=far right'),
-    ('age_mean',              'Mean Age',                'ESS agea - mean respondent age (years)'),
-    ('urban_pct',             'Urbanisation (%)',        'ESS domicil - share urban / suburban respondents'),
-    ('diversity_pct',         'Migration Background (%)', 'ESS brncntr/facntr/mocntr - share born abroad or parent born abroad'),
-    ('v2x_libdem',            'Liberal Democracy',       'V-Dem v15 v2x_libdem (0-1)'),
-    ('wb_gini',               'Gini Index',              'World Bank GINI index (0-100)'),
-    ('wb_unemployment',       'Unemployment (%)',        'World Bank unemployment rate (% of labour force)'),
-    ('wb_gdp_per_capita_ppp', 'GDP per Capita (PPP)',    'World Bank GDP/cap, PPP, constant 2017 int\'l $'),
-    ('gov_exp_health',           'Gov. Health Exp.',            'COFOG GF07: health (% of GDP)'),
-    ('gov_exp_education',        'Gov. Education Exp.',         'COFOG GF09: education (% of GDP)'),
-    ('gov_exp_social',           'Gov. Social Exp.',            'COFOG GF10: social protection (% of GDP)'),
-    ('gov_exp_defence',          'Gov. Defence Exp.',           'COFOG GF02: defence (% of GDP)'),
-    ('gov_exp_economic',         'Gov. Economic Exp.',          'COFOG GF04: economic affairs (% of GDP)'),
-    ('gov_exp_public_services',  'Gov. Public Services Exp.',   'COFOG GF01: general public services (% of GDP)'),
-    ('gov_exp_culture',          'Gov. Culture & Recreation Exp.', 'COFOG GF08: recreation, culture and religion (% of GDP)'),
-]
+# Standard ESS PVQ-21 item-to-value assignment (ESS Data Documentation).
+# ESS11 stores these with an 'a' suffix (e.g. ipcrtiva) which is stripped
+# on load. All 21 items are used - earlier versions of this project used
+# only 14 items with a partially incorrect mapping.
+PVQ21_ITEMS: dict[str, list[str]] = {
+    'SD': ['ipcrtiv', 'impfree'],
+    'PO': ['imprich', 'iprspot'],
+    'UN': ['ipeqopt', 'ipudrst', 'impenv'],
+    'AC': ['ipshabt', 'ipsuces'],
+    'SE': ['impsafe', 'ipstrgv'],
+    'ST': ['impdiff', 'ipadvnt'],
+    'CO': ['ipfrule', 'ipbhprp'],
+    'TR': ['ipmodst', 'imptrad'],
+    'HE': ['ipgdtim', 'impfun'],
+    'BE': ['iphlppl', 'iplylfr'],
+}
+ALL_PVQ_ITEMS = [item for items in PVQ21_ITEMS.values() for item in items]
 
-# Rich display metadata for the sidebar (source, question wording, scale, aggregation)
-SCATTER_X_DETAIL = {
-    'trust_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'ppltrst - "Most people can be trusted, or you can\'t be too careful"',
-        'scale':       '0 = can\'t be too careful · 10 = most people can be trusted',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
+VALUE_TO_DIM = {
+    'SD': 'Openness to Change', 'HE': 'Openness to Change', 'ST': 'Openness to Change',
+    'UN': 'Self-Transcendence', 'BE': 'Self-Transcendence',
+    'TR': 'Conservation',       'CO': 'Conservation',       'SE': 'Conservation',
+    'PO': 'Self-Enhancement',   'AC': 'Self-Enhancement',
+}
+
+DIM_COLS = {
+    'Openness to Change': 'dim_openness',
+    'Self-Transcendence': 'dim_transcendence',
+    'Conservation':       'dim_conservation',
+    'Self-Enhancement':   'dim_enhancement',
+}
+DIMS = list(DIM_COLS.keys())
+
+_DIM_VALUES = {
+    'dim_openness':      ['SD', 'HE', 'ST'],
+    'dim_transcendence': ['UN', 'BE'],
+    'dim_conservation':  ['TR', 'CO', 'SE'],
+    'dim_enhancement':   ['PO', 'AC'],
+}
+
+# Radial axis range for the country radar (country-level Δ-scores comfortably
+# fit inside; verified against the ESS11 build output)
+DELTA_RANGE = [-1.5, 1.5]
+
+# ── Deep-dive (regional) configuration ─────────────────────────────────────────
+DEEP_DIVE_COUNTRIES = {
+    'DE': {'label': 'Germany',     'nuts_level': 1, 'prefix': 'DE'},
+    'CH': {'label': 'Switzerland', 'nuts_level': 2, 'prefix': 'CH'},
+}
+
+# East/West classification of German NUTS-1 regions (new Länder vs. old)
+_DE_EAST   = {'DE4', 'DE8', 'DED', 'DEE', 'DEG'}
+_DE_BERLIN = {'DE3'}
+
+# Swiss NUTS-2 language regions
+_CH_LANGUAGE = {
+    'CH01': 'French-speaking (Romandie)',
+    'CH02': 'Mixed FR/DE (Mittelland)',
+    'CH03': 'German-speaking',
+    'CH04': 'German-speaking',
+    'CH05': 'German-speaking',
+    'CH06': 'German-speaking',
+    'CH07': 'Italian-speaking (Ticino)',
+}
+
+# Eurostat regional indicators offered in the deep-dive scatter
+# (key matches the 'indicator' column written by build_regional.py)
+REGIONAL_INDICATOR_META = {
+    'gdp_pps': {
+        'label':  'GDP per capita (PPS)',
+        'desc':   'Regional GDP per inhabitant in Purchasing Power Standards.',
+        'source': 'Eurostat nama_10r_2gdp (not available for Swiss regions)',
     },
-    'religiosity_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'rlgdgr - "Regardless of whether you belong to a particular religion, how religious are you?"',
-        'scale':       '0 = not religious at all · 10 = very religious',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
+    'unemployment': {
+        'label':  'Unemployment rate (%)',
+        'desc':   'Unemployment rate, ages 15-74, % of the labour force.',
+        'source': 'Eurostat lfst_r_lfu3rt',
     },
-    'eduyrs_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'eduyrs - Years of full-time education completed',
-        'scale':       'Years (continuous); non-responses (77, 88, 99) excluded',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
+    'tertiary_pct': {
+        'label':  'Tertiary attainment 25-64 (%)',
+        'desc':   'Share of 25-64 year-olds with a tertiary degree (ISCED 5-8).',
+        'source': 'Eurostat edat_lfse_04',
     },
-    'safety_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'aesfdrk - "How safe do you feel walking alone in your local area after dark?"',
-        'scale':       '1 = very safe · 4 = very unsafe (lower = safer)',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
+    'median_age': {
+        'label':  'Median age (years)',
+        'desc':   'Median age of the regional population.',
+        'source': 'Eurostat demo_r_pjanind2',
     },
-    'lrscale_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'lrscale - "In politics people sometimes talk of \'left\' and \'right\'. Where would you place yourself?"',
-        'scale':       '0 = left · 10 = right',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
-    },
-    'age_mean': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'agea - Age of respondent (calculated)',
-        'scale':       'Years (continuous)',
-        'aggregation': 'Country mean, averaged across all available ESS rounds',
-    },
-    'urban_pct': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'domicil - "Which phrase on this card best describes the area where you live?"',
-        'scale':       '% of respondents in "a big city" or "suburbs / outskirts of big city"',
-        'aggregation': 'Country share, averaged across all available ESS rounds',
-    },
-    'diversity_pct': {
-        'source':      'European Social Survey (ESS), Rounds 1-11 (2002-2023)',
-        'variable':    'brncntr, facntr, mocntr - born abroad or at least one parent born abroad',
-        'scale':       '% of respondents with migration background',
-        'aggregation': 'Country share, averaged across all available ESS rounds',
-    },
-    'v2x_libdem': {
-        'source':      'V-Dem Project, Country-Year Dataset v15 (Coppedge et al., 2024)',
-        'variable':    'v2x_libdem - Liberal Democracy Index',
-        'scale':       '0-1 (higher = more liberal-democratic); composite of electoral, liberal, and participatory components',
-        'aggregation': 'Country mean over ESS reference years (2002-2023)',
-    },
-    'wb_gini': {
-        'source':      'World Bank WDI (SI.POV.GINI) · Eurostat EU-SILC for HU 2018-2023',
-        'variable':    'SI.POV.GINI - Gini index of equivalised disposable income',
-        'scale':       '0-100 (higher = more unequal). 12 gaps filled with real data: '
-                       'WB nearest survey year (2002 gaps) or Eurostat EU-SILC / WB forward-carry (HU, CH, DE, NL 2023).',
-        'aggregation': 'Matched to ESS reference year; no imputation - all values from primary sources',
-    },
-    'wb_unemployment': {
-        'source':      'World Bank World Development Indicators (WDI)',
-        'variable':    'SL.UEM.TOTL.ZS - Unemployment, total (% of total labour force)',
-        'scale':       '% of labour force (ILO modelled estimates)',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'wb_gdp_per_capita_ppp': {
-        'source':      'World Bank World Development Indicators (WDI)',
-        'variable':    'NY.GDP.PCAP.PP.KD - GDP per capita, PPP (constant 2017 international $)',
-        'scale':       'Purchasing-power-parity adjusted, in thousands of 2017 USD',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_health': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF07 - Health (function 07 of total government expenditure)',
-        'scale':       '% of total government expenditure',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_education': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF09 - Education (function 09 of total government expenditure)',
-        'scale':       '% of total government expenditure',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_social': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF10 - Social protection (function 10 of total government expenditure)',
-        'scale':       '% of total government expenditure',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_defence': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF02 - Defence (function 02 of total government expenditure)',
-        'scale':       '% of total government expenditure',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_economic': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF04 - Economic affairs (function 04 of total government expenditure)',
-        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_public_services': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF01 - General public services (function 01 of total government expenditure)',
-        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
-        'aggregation': 'Country mean over ESS reference years',
-    },
-    'gov_exp_culture': {
-        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
-        'variable':    'GF08 - Recreation, culture and religion (function 08 of total government expenditure)',
-        'scale':       '% of GDP (Eurostat COFOG, total general government expenditure)',
-        'aggregation': 'Country mean over ESS reference years',
+    'pop_density': {
+        'label':  'Population density (per km²)',
+        'desc':   'Inhabitants per square kilometre.',
+        'source': 'Eurostat demo_r_d3dens',
     },
 }
 
-# (column, display label, color)
-SCATTER_Y_META = [
-    ('dim_openness',      'Openness to Change',  DIM_COLORS['Openness to Change']),
-    ('dim_transcendence', 'Self-Transcendence',  DIM_COLORS['Self-Transcendence']),
-    ('dim_conservation',  'Conservation',         DIM_COLORS['Conservation']),
-    ('dim_enhancement',   'Self-Enhancement',     DIM_COLORS['Self-Enhancement']),
-]
+GRADIENT_VARS = {
+    'age':         {'label': 'Age group'},
+    'education':   {'label': 'Education'},
+    'domicil':     {'label': 'Urbanisation'},
+    'gender':      {'label': 'Gender'},
+    'religiosity': {'label': 'Religiosity'},
+    'region_block': {'label': 'East / West (Germany)', 'countries': ['DE']},
+    'language':     {'label': 'Language region (Switzerland)', 'countries': ['CH']},
+}
 
-# ── Individual-level parallel coordinates ──────────────────────────────────────
+# ── ESS11 microdata: reading and person-level scoring ──────────────────────────
 
-# Attitude variables for the individual-level parallel coordinates.
-# All present in 11/11 ESS rounds; no round-level imputation needed.
-MICRO_ATTRS = [
-    'ppltrst', 'trstplt', 'trstlgl', 'stflife', 'stfeco',
-    'stfdem',  'lrscale', 'imwbcnt', 'gincdif',
-    'rlgdgr',  'aesfdrk',
-]
+_ATTITUDE_COLS = ['ppltrst', 'rlgdgr', 'lrscale', 'aesfdrk',
+                  'brncntr', 'facntr', 'mocntr']
+_DEMO_COLS     = ['gndr', 'agea', 'eduyrs', 'domicil']
 
-# (column, axis label, [range_min, range_max])
-# gincdif and aesfdrk are stored inverted (see load_micro_individual) so that
-# higher always means "more positive" on the axis.
-MICRO_ATTR_META = [
-    ('ppltrst',       'Interpersonal\nTrust',       [0, 10]),
-    ('trstplt',       'Trust in\nPoliticians',      [0, 10]),
-    ('trstlgl',       'Trust:\nLegal System',       [0, 10]),
-    ('stflife',       'Life\nSatisfaction',         [0, 10]),
-    ('stfeco',        'Econ.\nSatisfaction',        [0, 10]),
-    ('stfdem',        'Democracy\nSatisfaction',    [0, 10]),
-    ('lrscale',       'Left-Right\nScale',          [0, 10]),
-    ('imwbcnt',       'Immigration\nAttitude',      [0, 10]),
-    ('redistr_supp',  'Redistribution\nSupport',    [1, 5]),
-    ('rlgdgr',        'Religiosity',                [0, 10]),
-    ('safety',        'Safety\nAfter Dark',         [1, 4]),
-]
-
-# PVQ items → higher-order dimension (consistent with load_data() mapping)
-_PVQ_TO_DIM = {
-    'ipcrtiv': 'oc', 'ipadvnt': 'oc', 'ipgdtim': 'oc',
-    'iphlppl': 'st', 'ipeqopt': 'st', 'ipudrst': 'st',
-    'iplylfr': 'co', 'ipmodst': 'co', 'ipbhprp': 'co', 'ipfrule': 'co',
-    'ipshabt': 'se', 'ipsuces': 'se', 'iprspot': 'se', 'ipstrgv': 'se',
+# Per-variable maximum valid code; anything above is an ESS missing code
+_VALID_MAX = {
+    'ppltrst': 10, 'rlgdgr': 10, 'lrscale': 10, 'aesfdrk': 4,
+    'brncntr': 2,  'facntr':  2, 'mocntr':  2,
+    'gndr':    2,  'agea':  120, 'eduyrs': 60,  'domicil': 5,
 }
 
 
-# ── ESS Schwartz aggregation from raw CSVs ────────────────────────────────────
+def _find_ess11_csv() -> Path:
+    """Locate the raw ESS11 CSV (one file expected in data/raw/ess/ESS11).
 
-_PVQ_ITEMS = [
-    'ipcrtiv', 'ipadvnt', 'ipgdtim', 'iphlppl', 'ipeqopt',
-    'ipudrst', 'iplylfr', 'ipmodst', 'ipbhprp', 'ipfrule',
-    'ipshabt', 'ipsuces', 'iprspot', 'ipstrgv',
-]
-_MIN_RESPONDENTS = 30  # minimum country-round cell size to include
+    Returns:
+        Path to the CSV.
+
+    Raises:
+        FileNotFoundError: if no CSV is present (server deployments only
+            ship precomputed aggregates, never the raw file).
+    """
+    matches = glob.glob(str(ESS11_DIR / '*.csv'))
+    if not matches:
+        raise FileNotFoundError(f'No raw ESS11 CSV found in {ESS11_DIR}')
+    return Path(matches[0])
 
 
-def _aggregate_ess_values() -> pd.DataFrame:
-    """Aggregate PVQ-21 item means from raw ESS CSVs for all COUNTRIES."""
+def read_ess11_micro() -> pd.DataFrame:
+    """Read and clean the ESS11 microdata needed by all build functions.
+
+    Returns:
+        One row per respondent with cleaned PVQ items (1-6, NaN otherwise),
+        attitude and demographic variables (missing codes -> NaN), the
+        analysis weight ``anweight``, and the NUTS ``region`` code.
+    """
+    csv_path = _find_ess11_csv()
+    pvq_raw  = [item + 'a' for item in ALL_PVQ_ITEMS]   # ESS11 suffixed names
+    usecols  = (['cntry', 'region', 'anweight'] + pvq_raw
+                + _ATTITUDE_COLS + _DEMO_COLS)
+    df = pd.read_csv(csv_path, usecols=usecols, low_memory=False)
+    df.rename(columns={raw: raw[:-1] for raw in pvq_raw}, inplace=True)
+
+    for col in ALL_PVQ_ITEMS:
+        vals = pd.to_numeric(df[col], errors='coerce')
+        df[col] = vals.where((vals >= 1) & (vals <= 6))
+
+    for col, vmax in _VALID_MAX.items():
+        vals = pd.to_numeric(df[col], errors='coerce')
+        df[col] = vals.where(vals <= vmax)
+
+    df['region'] = df['region'].astype(str).str.strip()
+    log.info('ESS11 micro: %d respondents, %d countries',
+             len(df), df['cntry'].nunique())
+    return df
+
+
+def add_person_scores(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute reverse-coded, person-centred Schwartz scores per respondent.
+
+    Steps (Schwartz's recommended procedure):
+      1. Reverse-code each PVQ item: z = 7 - x, so higher = "more like me".
+      2. Drop respondents with fewer than MIN_VALID_PVQ valid items.
+      3. Value score s_K = mean of that value's valid items.
+      4. Centre at the person mean (mrat) across all valid items: c_K = s_K - mrat.
+      5. Higher-order dimensions = mean of their constituent centred values.
+
+    Args:
+        df: Output of read_ess11_micro().
+
+    Returns:
+        Copy of df (filtered) with columns ``c_<KEY>`` and ``dim_*`` added.
+    """
+    rev = 7 - df[ALL_PVQ_ITEMS]
+    valid_count = rev.notna().sum(axis=1)
+    keep = valid_count >= MIN_VALID_PVQ
+    df, rev = df[keep].copy(), rev[keep]
+    log.info('Person scores: kept %d respondents (>= %d valid PVQ items)',
+             len(df), MIN_VALID_PVQ)
+
+    mrat = rev.mean(axis=1)
+    for key, items in PVQ21_ITEMS.items():
+        df[f'c_{key}'] = rev[items].mean(axis=1) - mrat
+    for dim_col, keys in _DIM_VALUES.items():
+        df[dim_col] = df[[f'c_{k}' for k in keys]].mean(axis=1)
+    return df
+
+
+def _weighted_mean(values: pd.Series, weights: pd.Series) -> float:
+    """Weighted mean ignoring NaN values (NaN if nothing valid)."""
+    mask = values.notna() & weights.notna()
+    if not mask.any():
+        return np.nan
+    return float(np.average(values[mask], weights=weights[mask]))
+
+
+_SCORE_COLS = [f'c_{k}' for k in VALUE_KEYS] + list(_DIM_VALUES.keys())
+
+
+def _aggregate_scores(df: pd.DataFrame, by: list[str]) -> pd.DataFrame:
+    """Weighted aggregation of person-level Schwartz scores.
+
+    Args:
+        df: Microdata with person scores (add_person_scores output).
+        by: Grouping columns, e.g. ['cntry'] or ['cntry', 'region'].
+
+    Returns:
+        One row per group: d_<KEY> / dim_* weighted means + unweighted ``n``.
+    """
     records = []
-    for r in range(1, 12):
-        csvs = glob.glob(str(ESS_DIR / f'ESS{r}' / '*.csv'))
-        if not csvs:
-            continue
-        year = ROUND_TO_YEAR[r]
+    for group_keys, grp in df.groupby(by):
+        if not isinstance(group_keys, tuple):
+            group_keys = (group_keys,)
+        row = dict(zip(by, group_keys))
+        row['n'] = len(grp)
+        for col in _SCORE_COLS:
+            out = col.replace('c_', 'd_')   # country-level Δ naming
+            row[out] = _weighted_mean(grp[col], grp['anweight'])
+        records.append(row)
+    return pd.DataFrame(records)
 
-        # Discover available columns; some rounds use 'a'/'b' suffix (e.g. ESS11: ipcrtiva)
-        header = pd.read_csv(csvs[0], nrows=0)
-        header.columns = header.columns.str.lower()
 
-        def _norm(c):
-            return c[:-1] if c.startswith('ip') and len(c) > 5 and c[-1] in ('a', 'b') else c
+# ── Build functions (local only - need the raw ESS11 CSV) ──────────────────────
 
-        col_map = {c: _norm(c) for c in header.columns if _norm(c) in _PVQ_ITEMS}
-        avail   = ['cntry'] + list(col_map.keys())
-        avail   = [c for c in avail if c in header.columns]
+def build_country_aggregates(micro: pd.DataFrame) -> pd.DataFrame:
+    """Country-level weighted Schwartz aggregates (df_main).
 
-        raw = pd.read_csv(csvs[0], usecols=avail, low_memory=False)
-        raw.columns = raw.columns.str.lower()
-        raw.rename(columns={k: v for k, v in col_map.items() if k in raw.columns}, inplace=True)
-        for col in _PVQ_ITEMS:
-            if col not in raw.columns:
-                raw[col] = np.nan
+    Args:
+        micro: Person-scored microdata.
 
-        # Scale 1-6; codes 7/8/9 = missing
-        for col in _PVQ_ITEMS:
-            raw[col] = pd.to_numeric(raw[col], errors='coerce')
-            raw[col] = raw[col].where(raw[col] <= 6)
+    Returns:
+        One row per ESS11 country with d_* / dim_* scores, n, and metadata.
+    """
+    agg = _aggregate_scores(micro, ['cntry'])
+    agg = agg[agg['cntry'].isin(COUNTRIES)].copy()
+    agg['country_name'] = agg['cntry'].map(COUNTRIES)
+    agg['year']  = ESS_YEAR
+    agg['round'] = ESS_ROUND
+    return agg.sort_values('cntry').reset_index(drop=True)
 
-        for cntry, grp in raw.groupby('cntry'):
-            if cntry not in COUNTRIES:
+
+def build_regional_aggregates(micro: pd.DataFrame) -> pd.DataFrame:
+    """NUTS-region weighted Schwartz aggregates for the deep-dive countries.
+
+    Regions with fewer than MIN_REGION_N respondents are kept but flagged
+    via ``below_min_n`` so the UI can grey them out.
+
+    Args:
+        micro: Person-scored microdata.
+
+    Returns:
+        One row per (cntry, region) for DE (NUTS-1) and CH (NUTS-2).
+    """
+    sub = micro[micro['cntry'].isin(DEEP_DIVE_COUNTRIES)].copy()
+    sub = sub[sub['region'].str.match(r'^(DE.|CH..)$', na=False)]
+    agg = _aggregate_scores(sub, ['cntry', 'region'])
+    agg['below_min_n'] = agg['n'] < MIN_REGION_N
+    return agg.sort_values(['cntry', 'region']).reset_index(drop=True)
+
+
+def _gradient_groups(df: pd.DataFrame, var: str) -> pd.Series:
+    """Map raw microdata to labelled gradient groups for one variable.
+
+    Args:
+        df: Person-scored microdata (one deep-dive country).
+        var: Key in GRADIENT_VARS.
+
+    Returns:
+        Series of group labels (NaN = respondent not classifiable).
+    """
+    if var == 'age':
+        return pd.cut(df['agea'], bins=[14, 29, 44, 59, 74, 120],
+                      labels=['15-29', '30-44', '45-59', '60-74', '75+'])
+    if var == 'education':
+        return pd.cut(df['eduyrs'], bins=[-1, 11.5, 15.5, 60],
+                      labels=['Low (<12 yrs)', 'Medium (12-15 yrs)', 'High (16+ yrs)'])
+    if var == 'domicil':
+        return pd.cut(df['domicil'], bins=[0, 2, 3, 5],
+                      labels=['City & suburbs', 'Town', 'Village / rural'])
+    if var == 'gender':
+        return df['gndr'].map({1.0: 'Men', 2.0: 'Women'})
+    if var == 'religiosity':
+        return pd.cut(df['rlgdgr'], bins=[-1, 3, 6, 10],
+                      labels=['Low (0-3)', 'Medium (4-6)', 'High (7-10)'])
+    if var == 'region_block':
+        return df['region'].map(
+            lambda r: 'East Germany' if r in _DE_EAST
+            else 'Berlin' if r in _DE_BERLIN
+            else 'West Germany' if str(r).startswith('DE') else np.nan)
+    if var == 'language':
+        return df['region'].map(_CH_LANGUAGE)
+    raise ValueError(f'Unknown gradient variable: {var}')
+
+
+def build_gradients(micro: pd.DataFrame) -> pd.DataFrame:
+    """Within-country social gradients for the deep-dive countries.
+
+    Args:
+        micro: Person-scored microdata.
+
+    Returns:
+        Long DataFrame: one row per (cntry, variable, group) with weighted
+        d_* / dim_* scores and unweighted n. Groups below MIN_GROUP_N are
+        dropped.
+    """
+    frames = []
+    for cntry in DEEP_DIVE_COUNTRIES:
+        sub = micro[micro['cntry'] == cntry]
+        for var, meta in GRADIENT_VARS.items():
+            if 'countries' in meta and cntry not in meta['countries']:
                 continue
-            row = {'cntry': cntry, 'year': year}
-            for col in _PVQ_ITEMS:
-                vals = grp[col].dropna()
-                if len(vals) >= _MIN_RESPONDENTS:
-                    row[f'{col}_mean']   = float(vals.mean())
-                    row[f'{col}_median'] = float(vals.median())
-                else:
-                    row[f'{col}_mean']   = np.nan
-                    row[f'{col}_median'] = np.nan
-            records.append(row)
-
-    return pd.DataFrame(records)
-
-
-# ── XML helpers (shared by both xlsx files) ────────────────────────────────────
-
-def _xlsx_rows(path: Path, sheet: str = 'xl/worksheets/sheet1.xml') -> list:
-    """Parse an xlsx file and return all rows as lists of cell values (strings)."""
-    with zipfile.ZipFile(path) as z:
-        with z.open('xl/sharedStrings.xml') as f:
-            ss_tree = ET.parse(f)
-        ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-        strings = []
-        for si in ss_tree.findall('.//ns:si', ns):
-            t = ''.join((n.text or '') for n in si.findall('.//ns:t', ns))
-            strings.append(t)
-
-        with z.open(sheet) as f:
-            ws_tree = ET.parse(f)
-
-    rows = []
-    for row in ws_tree.findall('.//ns:row', ns):
-        row_data = []
-        for cell in row.findall('ns:c', ns):
-            v = cell.find('ns:v', ns)
-            t = cell.get('t', '')
-            if v is not None:
-                row_data.append(strings[int(v.text)] if t == 's' else v.text)
-            else:
-                row_data.append('')
-        rows.append(row_data)
-    return rows
+            groups = _gradient_groups(sub, var)
+            tmp = sub.assign(_group=groups.astype(object)).dropna(subset=['_group'])
+            agg = _aggregate_scores(tmp, ['_group'])
+            agg = agg[agg['n'] >= MIN_GROUP_N]
+            order = (list(groups.cat.categories)
+                     if hasattr(groups, 'cat') else sorted(agg['_group']))
+            agg['group_order'] = agg['_group'].map(
+                {g: i for i, g in enumerate(order)})
+            agg['cntry'], agg['variable'], agg['var_label'] = cntry, var, meta['label']
+            frames.append(agg.rename(columns={'_group': 'group'}))
+    out = pd.concat(frames, ignore_index=True)
+    return out.sort_values(['cntry', 'variable', 'group_order']).reset_index(drop=True)
 
 
-# ── Macro data loaders ─────────────────────────────────────────────────────────
+def _build_ess_predictors(micro: pd.DataFrame) -> pd.DataFrame:
+    """Weighted country-level ESS-derived predictors (trust, religiosity, ...).
 
-def _load_vdem() -> pd.DataFrame:
-    df = pd.read_csv(
-        VDEM_PATH,
-        usecols=['country_name', 'year', 'v2x_libdem'],
-        low_memory=False,
-    )
-    df['cntry'] = df['country_name'].map(_VDEM_NAME_TO_ISO2)
-    df = df.dropna(subset=['cntry'])
-    df = df[df['year'].isin(ALL_YEARS)][['cntry', 'year', 'v2x_libdem']]
-    return df.rename(columns={'v2x_libdem': 'ldi'})
+    Args:
+        micro: Person-scored microdata.
 
-
-def _load_gini() -> pd.DataFrame:
-    rows = _xlsx_rows(GINI_PATH)
-    # Row 5 (index 5) holds the year columns starting at col index 2
-    year_row = rows[5]
-    years = []
-    for x in year_row[2:]:
-        try:
-            years.append(int(float(x)))
-        except (ValueError, TypeError):
-            years.append(None)
-
+    Returns:
+        One row per country with the eight ESS-derived X variables.
+    """
     records = []
-    for row in rows[7:]:
-        if not row or not row[0]:
-            continue
-        cntry = _GINI_NAME_TO_ISO2.get(row[0])
-        if cntry is None:
-            continue
-        yr_vals = {}
-        for i, yr in enumerate(years):
-            if yr is None:
-                continue
-            raw = row[2 + i] if (2 + i) < len(row) else ''
-            if raw:
-                try:
-                    yr_vals[yr] = float(raw) * 100  # convert 0-1 → 0-100
-                except ValueError:
-                    pass
-        if not yr_vals:
-            continue
-        avail = sorted(yr_vals.keys())
-        for ess_yr in ALL_YEARS:
-            closest = min(avail, key=lambda y: abs(y - ess_yr))
-            records.append({'cntry': cntry, 'year': ess_yr, 'gini': yr_vals[closest]})
-
-    # Ireland absent from source xlsx - Eurostat EU-SILC.
-    _IE_GINI = {
-        2003: 31.1, 2004: 31.8, 2006: 32.4, 2007: 31.3, 2008: 30.7,
-        2010: 31.4, 2012: 30.0, 2014: 31.1, 2016: 29.5, 2018: 28.7,
-        2020: 27.8, 2022: 27.5, 2023: 26.9,
-    }
-    _avail_ie = sorted(_IE_GINI.keys())
-    for ess_yr in ALL_YEARS:
-        closest = min(_avail_ie, key=lambda y: abs(y - ess_yr))
-        records.append({'cntry': 'IE', 'year': ess_yr, 'gini': _IE_GINI[closest]})
-
-    # World Bank Development Indicators SI.POV.GINI (fetched 2025-04) for
-    # countries absent from the OECD source file. EU/EEA values use Eurostat
-    # EU-SILC as the underlying source; others use national household surveys.
-    # Closest-year matching is applied to map available survey years to ESS rounds.
-    _WB_GINI = {
-        'AL': {2002: 31.7, 2005: 30.6, 2008: 30.0, 2012: 29.0, 2014: 34.6,
-               2016: 33.7, 2018: 30.1, 2020: 29.4},
-        'AT': {2000: 29.0, 2003: 29.5, 2004: 29.8, 2006: 29.6, 2008: 30.4,
-               2010: 30.3, 2012: 30.5, 2014: 30.5, 2016: 30.8, 2018: 30.8,
-               2020: 29.8, 2022: 30.9, 2023: 31.2},
-        'BG': {2001: 32.7, 2003: 28.9, 2006: 35.7, 2008: 33.6, 2010: 35.7,
-               2012: 36.0, 2014: 37.4, 2016: 40.6, 2018: 41.3, 2020: 40.5,
-               2022: 38.2, 2023: 39.5},
-        'CY': {2004: 30.1, 2006: 31.1, 2008: 31.7, 2010: 31.5, 2012: 34.3,
-               2014: 35.6, 2016: 32.9, 2018: 32.7, 2020: 31.7, 2022: 31.5,
-               2023: 31.8},
-        'CZ': {2002: 26.6, 2004: 27.5, 2006: 26.7, 2008: 26.3, 2010: 26.6,
-               2012: 26.1, 2014: 25.9, 2016: 25.4, 2018: 25.0, 2020: 26.2,
-               2022: 25.9, 2023: 25.7},
-        'EE': {2002: 35.8, 2004: 33.6, 2006: 33.7, 2008: 31.9, 2010: 32.0,
-               2012: 32.9, 2014: 34.6, 2016: 31.2, 2018: 30.3, 2020: 30.7,
-               2022: 32.3, 2023: 30.7},
-        'GR': {2002: 35.5, 2004: 33.6, 2006: 35.1, 2008: 33.6, 2010: 34.1,
-               2012: 36.3, 2014: 35.8, 2016: 35.0, 2018: 32.9, 2020: 33.6,
-               2022: 33.4, 2023: 33.4},
-        'HR': {2004: 29.7, 2008: 33.7, 2010: 32.4, 2012: 32.5, 2014: 32.1,
-               2016: 30.9, 2018: 29.7, 2020: 29.5, 2022: 30.0, 2023: 30.1},
-        'IS': {2003: 26.8, 2004: 28.0, 2006: 30.2, 2008: 31.8, 2010: 26.2,
-               2012: 26.8, 2014: 27.8, 2016: 27.2, 2018: 26.6, 2019: 26.8},
-        'IL': {2002: 39.6, 2004: 41.5, 2006: 41.6, 2008: 41.6, 2010: 42.6,
-               2012: 41.3, 2014: 39.8, 2016: 39.0, 2018: 38.6, 2020: 37.8,
-               2022: 38.3},
-        'IT': {2002: 34.7, 2004: 34.3, 2006: 33.7, 2008: 33.8, 2010: 34.7,
-               2012: 35.2, 2014: 34.7, 2016: 35.2, 2018: 35.2, 2020: 35.2,
-               2022: 33.7, 2023: 34.3},
-        'LT': {2002: 31.9, 2004: 37.0, 2006: 34.4, 2008: 35.7, 2010: 33.6,
-               2012: 35.1, 2014: 37.7, 2016: 38.4, 2018: 35.7, 2020: 36.0,
-               2022: 36.6, 2023: 36.0},
-        'LU': {2002: 31.1, 2004: 30.2, 2006: 30.9, 2008: 32.6, 2010: 30.5,
-               2012: 34.3, 2014: 31.2, 2016: 31.7, 2018: 35.4, 2020: 33.4,
-               2022: 34.1, 2023: 33.6},
-        'LV': {2002: 35.1, 2004: 36.4, 2006: 35.6, 2008: 37.2, 2010: 35.0,
-               2012: 35.2, 2014: 35.1, 2016: 34.3, 2018: 35.1, 2020: 35.7,
-               2022: 33.7, 2023: 34.0},
-        'ME': {2005: 30.2, 2006: 30.0, 2008: 30.5, 2010: 28.9, 2012: 41.2,
-               2014: 38.8, 2016: 38.5, 2018: 36.8, 2020: 35.4, 2021: 34.3},
-        'MK': {2002: 38.5, 2004: 38.4, 2006: 42.6, 2008: 46.1, 2010: 40.1,
-               2012: 38.1, 2014: 35.2, 2016: 34.5, 2018: 33.0, 2019: 33.5},
-        'RO': {2002: 30.2, 2004: 30.0, 2006: 39.6, 2008: 36.4, 2010: 35.5,
-               2012: 36.5, 2014: 36.0, 2016: 34.4, 2018: 35.8, 2020: 34.6,
-               2022: 32.3, 2023: 29.8},
-        'RS': {2002: 32.7, 2004: 35.5, 2006: 29.7, 2008: 27.6, 2010: 29.0,
-               2012: 39.9, 2014: 40.4, 2016: 38.8, 2018: 35.0, 2020: 35.0,
-               2022: 32.8, 2023: 32.8},
-        'RU': {2002: 37.3, 2004: 40.3, 2006: 41.0, 2008: 41.6, 2010: 39.5,
-               2012: 40.7, 2014: 36.9, 2016: 36.7, 2018: 35.3, 2020: 33.7,
-               2022: 33.9, 2023: 33.0},
-        'SK': {2004: 27.1, 2006: 25.8, 2008: 26.0, 2010: 27.3, 2012: 26.1,
-               2014: 26.1, 2016: 25.2, 2018: 25.0, 2020: 24.2, 2022: 24.1,
-               2023: 23.8},
-        'TR': {2002: 41.4, 2004: 41.3, 2006: 39.6, 2008: 39.0, 2010: 38.8,
-               2012: 40.2, 2014: 41.2, 2016: 41.9, 2018: 42.4, 2020: 43.0,
-               2022: 44.5, 2023: 43.7},
-        'UA': {2002: 29.0, 2004: 28.9, 2006: 29.8, 2008: 26.6, 2010: 24.8,
-               2012: 24.7, 2014: 24.0, 2016: 25.0, 2018: 26.1, 2020: 25.6},
-        'XK': {2003: 29.0, 2005: 31.2, 2006: 30.3, 2009: 31.8, 2010: 33.3,
-               2011: 27.8, 2012: 29.0, 2013: 26.3, 2014: 27.3, 2015: 26.5,
-               2016: 26.7},
-    }
-    for cntry, yr_vals in _WB_GINI.items():
-        avail = sorted(yr_vals.keys())
-        for ess_yr in ALL_YEARS:
-            closest = min(avail, key=lambda y: abs(y - ess_yr))
-            records.append({'cntry': cntry, 'year': ess_yr,
-                            'gini': yr_vals[closest]})
-
+    for cntry, grp in micro.groupby('cntry'):
+        w = grp['anweight']
+        urban   = grp['domicil'].isin([1, 2]).astype(float).where(grp['domicil'].notna())
+        migrant = ((grp[['brncntr', 'facntr', 'mocntr']] == 2).any(axis=1)
+                   .astype(float)
+                   .where(grp[['brncntr', 'facntr', 'mocntr']].notna().any(axis=1)))
+        records.append({
+            'cntry':            cntry,
+            'trust_mean':       _weighted_mean(grp['ppltrst'], w),
+            'religiosity_mean': _weighted_mean(grp['rlgdgr'], w),
+            'eduyrs_mean':      _weighted_mean(grp['eduyrs'], w),
+            'safety_mean':      _weighted_mean(grp['aesfdrk'], w),
+            'lrscale_mean':     _weighted_mean(grp['lrscale'], w),
+            'age_mean':         _weighted_mean(grp['agea'], w),
+            'urban_pct':        _weighted_mean(urban, w) * 100,
+            'diversity_pct':    _weighted_mean(migrant, w) * 100,
+        })
     return pd.DataFrame(records)
 
 
-def _load_unemployment() -> pd.DataFrame:
-    rows = _xlsx_rows(UNEMP_PATH)
-    # Row 5 has the year columns
-    year_row = rows[5]
-    years = []
-    for x in year_row[2:]:
-        m = re.search(r'\((\d{4})\)', x) if x else None
-        years.append(int(m.group(1)) if m else None)
+# Real-data Gini patches for 2023 (World Bank / Eurostat, fetched 2026-04-28)
+_GINI_PATCHES_2023 = {
+    'HU': 28.6,   # Eurostat EU-SILC 2023 (series break)
+    'CH': 33.8,   # World Bank 2022 (forward-carry)
+    'DE': 33.7,   # World Bank 2022 (forward-carry)
+    'NL': 25.7,   # World Bank 2021 (forward-carry)
+}
 
-    # Find the "Total" sex section start (row label contains "_T")
-    total_start = None
-    for i, r in enumerate(rows):
-        if r and r[0] and '_T' in r[0] and 'Total' in r[0]:
-            total_start = i + 1  # data rows start after the header
-            break
-
-    if total_start is None:
-        print('[!] Unemployment: Total sex section not found')
-        return pd.DataFrame(columns=['cntry', 'year', 'unemployment_rate'])
-
-    records = []
-    for row in rows[total_start:]:
-        if not row or not row[0]:
-            break
-        m = re.search(r'\(([A-Z]{3})\)', row[0])
-        if not m:
-            break
-        cntry = _UNEMP_ISO3_TO_ISO2.get(m.group(1))
-        if cntry is None:
-            continue
-        for i, yr in enumerate(years):
-            if yr is None or yr not in ALL_YEARS:
-                continue
-            raw = row[2 + i] if (2 + i) < len(row) else ''
-            if raw:
-                try:
-                    records.append({'cntry': cntry, 'year': yr,
-                                    'unemployment_rate': float(raw)})
-                except ValueError:
-                    pass
-
-    # Switzerland - OECD harmonized rates (EU states only in source file).
-    _CH_UNEMP = {
-        2002: 3.1, 2004: 4.4, 2006: 4.0, 2008: 3.4, 2010: 4.5,
-        2012: 4.2, 2014: 4.9, 2016: 4.9, 2018: 4.7, 2020: 5.3, 2023: 4.1,
-    }
-    for ess_yr in ALL_YEARS:
-        if ess_yr in _CH_UNEMP:
-            records.append({'cntry': 'CH', 'year': ess_yr,
-                            'unemployment_rate': _CH_UNEMP[ess_yr]})
-
-    # World Bank / ILO modelled unemployment estimates (SL.UEM.TOTL.ZS,
-    # fetched 2025-04) for countries absent from the OECD source file.
-    _WB_UNEMP = {
-        'AL': {2002: 17.89, 2004: 16.31, 2006: 15.63, 2008: 13.06, 2010: 14.09,
-               2012: 13.38, 2014: 18.05, 2016: 15.42, 2018: 12.30, 2020: 11.64,
-               2023: 10.67},
-        'AT': {2002: 4.85, 2004: 5.97, 2006: 5.32, 2008: 4.20, 2010: 4.88,
-               2012: 4.91, 2014: 5.67, 2016: 6.06, 2018: 4.93, 2020: 5.20,
-               2023: 5.26},
-        'BG': {2002: 18.11, 2004: 12.04, 2006: 8.95, 2008: 5.61, 2010: 10.28,
-               2012: 12.27, 2014: 11.42, 2016: 7.58, 2018: 5.21, 2020: 5.04,
-               2023: 4.32},
-        'CY': {2002: 3.34, 2004: 4.77, 2006: 4.59, 2008: 3.76, 2010: 6.36,
-               2012: 12.10, 2014: 16.28, 2016: 13.01, 2018: 8.50, 2020: 7.75,
-               2023: 5.83},
-        'CZ': {2002: 7.28, 2004: 8.30, 2006: 7.14, 2008: 4.39, 2010: 7.28,
-               2012: 6.98, 2014: 6.11, 2016: 3.95, 2018: 2.25, 2020: 2.55,
-               2023: 2.58},
-        'EE': {2002: 10.03, 2004: 10.25, 2006: 5.92, 2008: 5.46, 2010: 16.71,
-               2012: 10.02, 2014: 7.35, 2016: 6.88, 2018: 5.41, 2020: 6.96,
-               2023: 6.38},
-        'GR': {2002: 10.35, 2004: 10.63, 2006: 8.91, 2008: 7.66, 2010: 12.72,
-               2012: 24.73, 2014: 26.71, 2016: 23.51, 2018: 19.18, 2020: 15.90,
-               2023: 11.02},
-        'HR': {2002: 15.05, 2004: 13.66, 2006: 11.13, 2008: 8.53, 2010: 11.62,
-               2012: 16.05, 2014: 17.21, 2016: 13.02, 2018: 8.32, 2020: 7.39,
-               2023: 6.12},
-        'IL': {2002: 12.89, 2004: 13.03, 2006: 10.71, 2008: 7.70, 2010: 8.48,
-               2012: 6.76, 2014: 5.79, 2016: 4.72, 2018: 3.92, 2020: 4.17,
-               2023: 3.37},
-        'IS': {2002: 2.99, 2004: 4.03, 2006: 2.83, 2008: 2.95, 2010: 7.56,
-               2012: 6.00, 2014: 4.90, 2016: 2.98, 2018: 2.70, 2020: 5.48,
-               2023: 3.52},
-        'IT': {2002: 9.21, 2004: 7.87, 2006: 6.78, 2008: 6.72, 2010: 8.36,
-               2012: 10.65, 2014: 12.68, 2016: 11.69, 2018: 10.54, 2020: 9.19,
-               2023: 7.63},
-        'LT': {2002: 13.01, 2004: 10.68, 2006: 5.78, 2008: 5.83, 2010: 17.81,
-               2012: 13.37, 2014: 10.70, 2016: 7.86, 2018: 6.15, 2020: 8.49,
-               2023: 6.84},
-        'LU': {2002: 2.62, 2004: 5.11, 2006: 4.73, 2008: 5.06, 2010: 4.42,
-               2012: 5.03, 2014: 6.04, 2016: 6.67, 2018: 5.59, 2020: 6.77,
-               2023: 5.18},
-        'LV': {2002: 13.83, 2004: 11.71, 2006: 7.03, 2008: 7.74, 2010: 19.48,
-               2012: 15.05, 2014: 10.85, 2016: 9.64, 2018: 7.41, 2020: 8.10,
-               2023: 6.46},
-        'ME': {2002: 30.36, 2004: 30.34, 2006: 24.82, 2008: 17.15, 2010: 19.65,
-               2012: 19.81, 2014: 18.05, 2016: 17.73, 2018: 15.19, 2020: 17.88,
-               2023: 13.15},
-        'MK': {2002: 31.94, 2004: 37.16, 2006: 36.39, 2008: 33.93, 2010: 33.13,
-               2012: 31.10, 2014: 28.21, 2016: 24.31, 2018: 21.21, 2020: 16.57,
-               2023: 13.17},
-        'RO': {2002: 8.11, 2004: 7.72, 2006: 7.27, 2008: 5.79, 2010: 6.96,
-               2012: 6.79, 2014: 6.80, 2016: 5.90, 2018: 4.19, 2020: 5.04,
-               2023: 5.59},
-        'RS': {2002: 13.80, 2004: 18.50, 2006: 20.85, 2008: 13.67, 2010: 19.20,
-               2012: 24.00, 2014: 19.22, 2016: 15.26, 2018: 12.73, 2020: 9.01,
-               2023: 8.27},
-        'RU': {2002: 7.88, 2004: 7.76, 2006: 7.05, 2008: 6.21, 2010: 7.41,
-               2012: 5.48, 2014: 5.21, 2016: 5.59, 2018: 4.87, 2020: 5.62,
-               2023: 3.08},
-        'SK': {2002: 18.54, 2004: 18.21, 2006: 13.39, 2008: 9.51, 2010: 14.39,
-               2012: 13.97, 2014: 11.54, 2016: 9.68, 2018: 6.54, 2020: 6.72,
-               2023: 5.84},
-        'TR': {2002: 10.36, 2004: 10.84, 2006: 10.23, 2008: 10.96, 2010: 11.88,
-               2012: 9.21, 2014: 9.90, 2016: 10.90, 2018: 10.96, 2020: 13.15,
-               2023: 9.39},
-        'UA': {2002: 10.14, 2004: 8.59, 2006: 6.81, 2008: 6.36, 2010: 8.10,
-               2012: 7.53, 2014: 9.27, 2016: 9.35, 2018: 8.80, 2020: 9.47,
-               2023: 9.47},
-    }
-    for cntry, yr_vals in _WB_UNEMP.items():
-        for ess_yr in ALL_YEARS:
-            if ess_yr in yr_vals:
-                records.append({'cntry': cntry, 'year': ess_yr,
-                                'unemployment_rate': yr_vals[ess_yr]})
-
-    return pd.DataFrame(records)
-
-
-def _load_micro() -> pd.DataFrame:
-    """Compute migration share and mean education from raw ESS CSVs."""
-    target = set(COUNTRIES.keys())
-    _MISS_MIGR = {7, 8, 9}
-    _MISS_EDU  = {77, 88, 99}
-
-    records = []
-    for r in range(1, 12):
-        csvs = glob.glob(str(ESS_DIR / f'ESS{r}' / '*.csv'))
-        if not csvs:
-            print(f'  [!] Micro: no CSV for ESS{r}')
-            continue
-        year = ROUND_TO_YEAR[r]
-
-        df = pd.read_csv(
-            csvs[0],
-            usecols=['cntry', 'brncntr', 'facntr', 'mocntr', 'eduyrs'],
-            low_memory=False,
-        )
-        df = df[df['cntry'].isin(target)].copy()
-
-        # Migration: at least one of the three variables == 2 (born abroad)
-        for col in ['brncntr', 'facntr', 'mocntr']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-            df[col] = df[col].where(~df[col].isin(_MISS_MIGR))
-        df['migrant'] = (df[['brncntr', 'facntr', 'mocntr']] == 2).any(axis=1)
-
-        # Education: exclude system-missing codes ≥ 77
-        df['eduyrs'] = pd.to_numeric(df['eduyrs'], errors='coerce')
-        edu = df['eduyrs'].where(~df['eduyrs'].isin(_MISS_EDU))
-
-        for cntry, grp in df.groupby('cntry'):
-            edu_grp = edu[grp.index]
-            records.append({
-                'cntry': cntry,
-                'year':  year,
-                'migration_share': round(grp['migrant'].mean() * 100, 2),
-                'mean_eduyrs':     round(edu_grp.mean(), 2),
-            })
-
-    return pd.DataFrame(records)
-
-
-# ── Government spending (COFOG) ────────────────────────────────────────────────
-# Columns available in df_gov_exp (% of GDP)
+_EXTERNAL_X_COLS = ['v2x_libdem', 'wb_gini', 'wb_unemployment',
+                    'wb_gdp_per_capita_ppp']
 GOV_EXP_COLS = [
     'gov_exp_health', 'gov_exp_education', 'gov_exp_social',
     'gov_exp_defence', 'gov_exp_economic', 'gov_exp_public_services',
     'gov_exp_culture',
 ]
 
-# ── Value Space dimension groups ───────────────────────────────────────────────
-# Each group defines the column set used for PCA + K-Means in the Value Space tab.
-# 'source': which precomputed DataFrame the columns come from.
-# 'spoke_labels': display names for the glyph spokes (same order as cols).
-DIMENSION_GROUPS: dict[str, dict] = {
-    'values': {
-        'label':        'Value Orientations',
-        'desc':         '10 Schwartz basic value Δ-scores (deviation from country mean). '
-                        'Captures what people prioritise relative to their own cultural baseline.',
-        'cols':         [f'd_{k}' for k in VALUE_KEYS],
-        'spoke_labels': ['Self-Dir.', 'Universalism', 'Benevolence', 'Tradition',
-                         'Conformity', 'Security', 'Power', 'Achievement',
-                         'Hedonism', 'Stimulation'],
-        'source':       'df_main',
-        'year_slider':  True,
-    },
-    'attitudes': {
-        'label':        'Social Attitudes',
-        'desc':         'Country means of six ESS attitude variables: interpersonal trust, '
-                        'religiosity, left-right self-placement, perceived safety, '
-                        'urbanisation rate, and mean age.',
-        'cols':         ['trust_mean', 'religiosity_mean', 'lrscale_mean',
-                         'safety_mean', 'urban_pct', 'age_mean'],
-        'spoke_labels': ['Trust', 'Religiosity', 'Left-Right', 'Safety',
-                         'Urban %', 'Mean Age'],
-        'source':       'df_scatter',
-        'year_slider':  True,
-    },
-    'economy': {
-        'label':        'Economic Structure',
-        'desc':         'Five macro-economic indicators: GDP per capita (PPP), '
-                        'income inequality (Gini), unemployment rate, migration '
-                        'background share, and mean years of education.',
-        'cols':         ['wb_gdp_per_capita_ppp', 'wb_gini', 'wb_unemployment',
-                         'diversity_pct', 'eduyrs_mean'],
-        'spoke_labels': ['GDP/cap', 'Gini', 'Unemployment', 'Migration %', 'Education'],
-        'source':       'df_scatter',
-        'year_slider':  True,
-    },
-    'gov_spending': {
-        'label':        'Government Spending',
-        'desc':         'Government expenditure by COFOG function as % of GDP: '
-                        'health, education, social protection, defence, and economic affairs. '
-                        'Source: Eurostat (EU/EEA) and World Bank (other countries).',
-        'cols':         ['gov_exp_health', 'gov_exp_education', 'gov_exp_social',
-                         'gov_exp_defence', 'gov_exp_economic'],
-        'spoke_labels': ['Health', 'Education', 'Social', 'Defence', 'Economic'],
-        'source':       'df_gov_exp',
-        'year_slider':  True,
-    },
-}
 
-# ── Precomputed dataset directory ─────────────────────────────────────────────
-# On the server (Render), only the three small derived CSVs in this folder exist.
-# On a local dev machine, the full raw data is used and the CSVs are regenerated
-# by running `python dashboard/export_precomputed.py`.
+def _load_external_macro_2023() -> pd.DataFrame:
+    """External macro X variables for 2023 from the merged analysis dataset.
 
-PRECOMPUTED_DIR = Path(__file__).parent / 'precomputed'
+    Returns:
+        One row per country: V-Dem LDI, World Bank Gini / unemployment / GDP,
+        with documented real-data Gini patches applied.
+    """
+    df = pd.read_csv(MACRO_CSV)
+    df = df[df['year'] == ESS_YEAR].copy()
+    for cntry, value in _GINI_PATCHES_2023.items():
+        df.loc[df['cntry'] == cntry, 'wb_gini'] = value
+    keep = ['cntry'] + [c for c in _EXTERNAL_X_COLS if c in df.columns]
+    return df[keep].reset_index(drop=True)
 
 
-def _load_precomputed(name: str) -> 'pd.DataFrame | None':
+def _load_gov_exp_latest() -> pd.DataFrame:
+    """Latest available COFOG expenditure (% of GDP) per country.
+
+    Returns:
+        One row per country with GOV_EXP_COLS and ``gov_exp_year``.
+    """
+    path = PRECOMPUTED_DIR / 'df_gov_exp.csv'
+    if not path.exists():
+        return pd.DataFrame(columns=['cntry', 'gov_exp_year'] + GOV_EXP_COLS)
+    df = pd.read_csv(path)
+    df = df.sort_values('year').groupby('cntry', as_index=False).tail(1)
+    df = df.rename(columns={'year': 'gov_exp_year'})
+    return df[['cntry', 'gov_exp_year']
+              + [c for c in GOV_EXP_COLS if c in df.columns]]
+
+
+def build_scatter(micro: pd.DataFrame, df_main: pd.DataFrame) -> pd.DataFrame:
+    """Country-level cross-section for the Correlations tab (df_scatter).
+
+    X: weighted ESS-derived predictors + newest external macro indicators.
+    Y: the same person-centred dimension scores shown everywhere else.
+
+    Args:
+        micro: Person-scored microdata.
+        df_main: Output of build_country_aggregates().
+
+    Returns:
+        One row per ESS11 country.
+    """
+    df = _build_ess_predictors(micro)
+    df = df.merge(_load_external_macro_2023(), on='cntry', how='left')
+    df = df.merge(_load_gov_exp_latest(), on='cntry', how='left')
+    y_cols = ['cntry'] + list(_DIM_VALUES.keys()) + [f'd_{k}' for k in VALUE_KEYS]
+    df = df.merge(df_main[y_cols], on='cntry', how='left')
+    df['country_name'] = df['cntry'].map(COUNTRIES)
+    df['year'] = ESS_YEAR
+    return df.sort_values('cntry').reset_index(drop=True)
+
+
+# ── Precomputed loaders (server mode) ──────────────────────────────────────────
+
+def _load_precomputed(name: str) -> pd.DataFrame | None:
+    """Read a precomputed CSV if present, else None."""
     path = PRECOMPUTED_DIR / f'{name}.csv'
     if path.exists():
-        print(f'[precomputed] Loading {name}.csv')
         return pd.read_csv(path)
     return None
 
 
-# ── Master data loader ─────────────────────────────────────────────────────────
-
 def load_data() -> pd.DataFrame:
+    """Country-level ESS11 Schwartz aggregates (precomputed-first)."""
     cached = _load_precomputed('df_main')
     if cached is not None:
         return cached
-    print('[data] Aggregating ESS values from raw CSVs...')
-    df = _aggregate_ess_values()
-    df['round']        = df['year'].map(YEAR_TO_ROUND)
-    df['country_name'] = df['cntry'].map(COUNTRIES)
-
-    # 10 basic Schwartz values (matching generate_radars_ess11_all.py mapping)
-    df['v_SD'] = df['ipcrtiv_mean']
-    df['v_ST'] = df['ipadvnt_mean']
-    df['v_HE'] = df['ipgdtim_mean']
-    df['v_AC'] = df['ipsuces_mean']
-    df['v_PO'] = df['ipshabt_mean']
-    df['v_SE'] = df['ipstrgv_mean']
-    df['v_CO'] = df[['ipbhprp_mean', 'ipfrule_mean', 'ipmodst_mean']].mean(axis=1)
-    df['v_TR'] = df['iprspot_mean']
-    df['v_BE'] = df[['iphlppl_mean', 'iplylfr_mean']].mean(axis=1)
-    df['v_UN'] = df[['ipeqopt_mean', 'ipudrst_mean']].mean(axis=1)
-
-    # Δ-scores: subtract row mean across the 10 basic values
-    v_cols   = [f'v_{k}' for k in VALUE_KEYS]
-    row_mean = df[v_cols].mean(axis=1)
-    for k in VALUE_KEYS:
-        df[f'd_{k}'] = df[f'v_{k}'] - row_mean
-
-    # 4 higher-order dimensions (raw means of PVQ items)
-    df['dim_openness']      = df[['ipcrtiv_mean', 'ipadvnt_mean', 'ipgdtim_mean']].mean(axis=1)
-    df['dim_conservation']  = df[['iplylfr_mean', 'ipmodst_mean', 'ipbhprp_mean', 'ipfrule_mean']].mean(axis=1)
-    df['dim_enhancement']   = df[['ipshabt_mean', 'ipsuces_mean', 'iprspot_mean', 'ipstrgv_mean']].mean(axis=1)
-    df['dim_transcendence'] = df[['iphlppl_mean', 'ipeqopt_mean', 'ipudrst_mean']].mean(axis=1)
-
-    print('[data] Loading ESS micro (migration, education)...')
-    micro = _load_micro()
-    df = df.merge(micro, on=['cntry', 'year'], how='left')
-
-    print('[data] Loading V-Dem...')
-    vdem = _load_vdem()
-    df = df.merge(vdem, on=['cntry', 'year'], how='left')
-
-    print('[data] Loading Gini...')
-    gini = _load_gini()
-    df = df.merge(gini, on=['cntry', 'year'], how='left')
-
-    print('[data] Loading Unemployment...')
-    unemp = _load_unemployment()
-    df = df.merge(unemp, on=['cntry', 'year'], how='left')
-
-    macro_cols = ['ldi', 'gini', 'unemployment_rate', 'migration_share', 'mean_eduyrs']
-    present = [c for c in macro_cols if c in df.columns]
-    print(f'[data] Master dataset: {df.shape[0]} rows × {df.shape[1]} cols')
-    print(f'[data] Macro coverage (non-NaN per column):')
-    for c in present:
-        print(f'  {c}: {df[c].notna().sum()}/{len(df)} rows')
-    print(f'[data] Sample (DE, 2023):')
-    sample = df[(df['cntry'] == 'DE') & (df['year'] == 2023)][
-        ['cntry', 'year'] + present
-    ]
-    print(sample.to_string(index=False))
-
-    return df
+    micro = add_person_scores(read_ess11_micro())
+    return build_country_aggregates(micro)
 
 
 def load_scatter_data() -> pd.DataFrame:
-    """Load macro_schwartz_analysis_data, compute Schwartz delta dim scores.
-
-    Checks precomputed/df_scatter.csv first (server mode).
-    Returns a DataFrame (up to 39 countries × 11 ESS rounds, ~248 rows) with all
-    predictor and Schwartz dimension columns, plus 'ess_round' and
-    'country_name'. Real data patches for wb_gini are applied from
-    _GINI_PATCHES (World Bank / Eurostat, fetched 2026-04-28).
-    """
+    """Country-level correlation dataset (precomputed-first)."""
     cached = _load_precomputed('df_scatter')
     if cached is not None:
         return cached
-
-    df = pd.read_csv(SCATTER_PATH)
-    df['ess_round'] = df['year'].map(YEAR_TO_ROUND)
-
-    # Apply wb_gini real-data patches
-    for (cntry, year), (value, _source) in _GINI_PATCHES.items():
-        mask = (df['cntry'] == cntry) & (df['year'] == year)
-        df.loc[mask, 'wb_gini'] = value
-
-    # Basic Schwartz values from PVQ item means
-    df['v_SD'] = df['ipcrtiv_mean']
-    df['v_ST'] = df['ipadvnt_mean']
-    df['v_HE'] = df['ipgdtim_mean']
-    df['v_AC'] = df['ipsuces_mean']
-    df['v_PO'] = df['ipshabt_mean']
-    df['v_SE'] = df['ipstrgv_mean']
-    df['v_CO'] = df[['ipbhprp_mean', 'ipfrule_mean', 'ipmodst_mean']].mean(axis=1)
-    df['v_TR'] = df['iprspot_mean']
-    df['v_BE'] = df[['iphlppl_mean', 'iplylfr_mean']].mean(axis=1)
-    df['v_UN'] = df[['ipeqopt_mean', 'ipudrst_mean']].mean(axis=1)
-
-    # Ipsatize per country-round row
-    v_cols   = [f'v_{k}' for k in VALUE_KEYS]
-    row_mean = df[v_cols].mean(axis=1)
-    for k in VALUE_KEYS:
-        df[f'd_{k}'] = df[f'v_{k}'] - row_mean
-
-    # Higher-order dimension delta scores
-    df['dim_openness']      = df[['d_SD', 'd_ST', 'd_HE']].mean(axis=1)
-    df['dim_transcendence'] = df[['d_UN', 'd_BE']].mean(axis=1)
-    df['dim_conservation']  = df[['d_TR', 'd_CO', 'd_SE']].mean(axis=1)
-    df['dim_enhancement']   = df[['d_PO', 'd_AC']].mean(axis=1)
-
-    df['country_name'] = df['cntry'].map(COUNTRIES)
-
-    x_cols = [col for col, _, _ in SCATTER_X_META]
-    y_cols = [col for col, _, _ in SCATTER_Y_META]
-    keep   = ['cntry', 'country_name', 'year', 'ess_round'] + \
-             [c for c in x_cols + y_cols if c in df.columns]
-    df = df[keep].copy()
-
-    # Merge extended government expenditure (all 39 countries)
-    gov_exp = load_gov_exp()
-    if not gov_exp.empty:
-        gov_cols = [c for c in gov_exp.columns if c not in ('cntry', 'year')]
-        df = df.merge(gov_exp[['cntry', 'year'] + gov_cols],
-                      on=['cntry', 'year'], how='left', suffixes=('', '_new'))
-        for col in gov_cols:
-            if col in df.columns and col + '_new' in df.columns:
-                df[col] = df[col].combine_first(df.pop(col + '_new'))
-            elif col + '_new' in df.columns:
-                df.rename(columns={col + '_new': col}, inplace=True)
-
-    n_patched = sum(1 for k in _GINI_PATCHES
-                    if df[(df['cntry'] == k[0]) & (df['year'] == k[1])]['wb_gini'].notna().any())
-    gov_coverage = df['gov_exp_health'].notna().sum() if 'gov_exp_health' in df.columns else 0
-    print(f'[scatter] {len(df)} rows, {df["cntry"].nunique()} countries, '
-          f'{n_patched} Gini patches, gov_exp_health {gov_coverage} non-null')
-    return df
+    micro = add_person_scores(read_ess11_micro())
+    return build_scatter(micro, build_country_aggregates(micro))
 
 
-def load_micro_individual(sample_per_dim: int = 300, seed: int = 42) -> pd.DataFrame:
-    """Load individual ESS respondents, classify by dominant Schwartz dimension, stratified-sample.
-
-    Checks precomputed/df_micro.csv first (server mode, no raw ESS data needed).
-    Returns a DataFrame with one row per sampled respondent containing:
-    - cntry, essround
-    - dominant_dim (str), dim_id (int 0-3)
-    - 12 attitude variables (see MICRO_ATTRS / MICRO_ATTR_META)
-      redistr_supp = 6 - gincdif  (higher = more redistribution support)
-      safety       = 5 - aesfdrk  (higher = feels safer)
-    """
-    cached = _load_precomputed('df_micro')
+def load_regional() -> pd.DataFrame:
+    """Regional (NUTS) Schwartz aggregates for DE / CH (precomputed-first)."""
+    cached = _load_precomputed('df_regional')
     if cached is not None:
         return cached
-    target_countries = set(COUNTRIES.keys())
-    pvq_cols = list(_PVQ_TO_DIM.keys())
-    needed   = pvq_cols + MICRO_ATTRS + ['cntry', 'essround']
-
-    frames = []
-    for r in range(1, 12):
-        csvs = glob.glob(str(ESS_DIR / f'ESS{r}' / '*.csv'))
-        if not csvs:
-            print(f'  [micro] no CSV for ESS{r}')
-            continue
-        print(f'  [micro] loading ESS{r}...')
-        header = pd.read_csv(csvs[0], nrows=0)
-        header.columns = header.columns.str.lower()
-        avail = [c for c in needed if c in header.columns]
-
-        df_r = pd.read_csv(csvs[0], usecols=avail, low_memory=False)
-        df_r.columns = df_r.columns.str.lower()
-        df_r = df_r[df_r['cntry'].isin(target_countries)].copy()
-        for c in needed:
-            if c not in df_r.columns:
-                df_r[c] = np.nan
-        frames.append(df_r[needed])
-
-    df = pd.concat(frames, ignore_index=True)
-
-    # ── Clean PVQ items (scale 1-6; codes 7/8/9 = missing) ──
-    for col in pvq_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-        df[col] = df[col].where(df[col] <= 6)
-
-    # Drop rows with fewer than 10 valid PVQ items
-    df = df[df[pvq_cols].notna().sum(axis=1) >= 10].copy()
-
-    # Ipsatize per respondent (subtract personal mean across available items)
-    pvq_mean = df[pvq_cols].mean(axis=1)
-    ip = df[pvq_cols].sub(pvq_mean, axis=0)
-
-    # Compute ipsatized higher-order dimension scores
-    oc_items = [c for c, d in _PVQ_TO_DIM.items() if d == 'oc']
-    st_items = [c for c, d in _PVQ_TO_DIM.items() if d == 'st']
-    co_items = [c for c, d in _PVQ_TO_DIM.items() if d == 'co']
-    se_items = [c for c, d in _PVQ_TO_DIM.items() if d == 'se']
-    df['_oc'] = ip[oc_items].mean(axis=1)
-    df['_st'] = ip[st_items].mean(axis=1)
-    df['_co'] = ip[co_items].mean(axis=1)
-    df['_se'] = ip[se_items].mean(axis=1)
-
-    # Assign dominant dimension (argmax of ipsatized scores)
-    dim_arr  = df[['_oc', '_st', '_co', '_se']].values
-    dim_idx  = np.argmax(dim_arr, axis=1)
-    dim_names = ['Openness to Change', 'Self-Transcendence', 'Conservation', 'Self-Enhancement']
-    df['dominant_dim'] = [dim_names[i] for i in dim_idx]
-    df['dim_id']       = dim_idx.astype(float)
-
-    # ── Clean attitude variables ──
-    # Per-variable valid max: any value above this is a missing code
-    _valid_max = {
-        'ppltrst': 10, 'trstplt': 10, 'trstlgl': 10, 'stflife': 10,
-        'stfeco':  10, 'stfdem':  10, 'lrscale': 10, 'happy':   10,
-        'imwbcnt': 10, 'rlgdgr':  10, 'gincdif': 5,  'aesfdrk': 4,
-    }
-    for col in MICRO_ATTRS:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-        df[col] = df[col].where(df[col] <= _valid_max.get(col, 10))
-
-    # Impute missing values with round-level median
-    for col in MICRO_ATTRS:
-        medians = df.groupby('essround')[col].transform('median')
-        df[col] = df[col].fillna(medians)
-
-    # Invert direction for two variables so higher = more positive on every axis
-    df['redistr_supp'] = 6 - df['gincdif']   # 1=oppose → 1,  5=support → 5
-    df['safety']       = 5 - df['aesfdrk']    # 1=unsafe → 1,  4=very safe → 4
-
-    # Stratified sample: sample_per_dim rows per dominant dimension
-    rng   = np.random.RandomState(seed)
-    parts = []
-    for dim in dim_names:
-        sub = df[df['dominant_dim'] == dim]
-        n   = min(sample_per_dim, len(sub))
-        parts.append(sub.sample(n=n, random_state=rng))
-
-    result = pd.concat(parts, ignore_index=True)
-    attr_cols = [col for col, _, _ in MICRO_ATTR_META]
-    keep = ['cntry', 'essround', 'dominant_dim', 'dim_id'] + attr_cols
-    print(f'[micro] {len(result)} sampled respondents '
-          f'({sample_per_dim}/dim across {len(dim_names)} dims)')
-    return result[keep]
+    micro = add_person_scores(read_ess11_micro())
+    return build_regional_aggregates(micro)
 
 
-# ── Sociological indicator metadata and loader ────────────────────────────────
+def load_gradients() -> pd.DataFrame:
+    """Social-gradient aggregates for DE / CH (precomputed-first)."""
+    cached = _load_precomputed('df_gradients')
+    if cached is not None:
+        return cached
+    micro = add_person_scores(read_ess11_micro())
+    return build_gradients(micro)
+
+
+def load_regional_indicators() -> pd.DataFrame:
+    """Eurostat regional indicators (built by build_regional.py)."""
+    df = _load_precomputed('df_regional_indicators')
+    return df if df is not None else pd.DataFrame(
+        columns=['region', 'indicator', 'value', 'year'])
+
+
+def load_geojson() -> dict:
+    """Trimmed GISCO NUTS GeoJSON for DE NUTS-1 + CH NUTS-2 regions."""
+    path = PRECOMPUTED_DIR / 'nuts_regions.geojson'
+    if not path.exists():
+        return {'type': 'FeatureCollection', 'features': []}
+    return json.loads(path.read_text())
+
+
+def load_mlm_results() -> dict:
+    """Precomputed multilevel-model results (built by build_mlm.py)."""
+    path = PRECOMPUTED_DIR / 'mlm_results.json'
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def load_gov_exp() -> pd.DataFrame:
+    """Latest COFOG government expenditure per country (for Value Space)."""
+    return _load_gov_exp_latest()
+
+
+# ── Structural indicators (Country Profile sidebar) ────────────────────────────
 
 INDICATOR_META: dict[str, dict] = {
     'ess_trust_mean': {
@@ -1229,138 +730,328 @@ INDICATOR_META: dict[str, dict] = {
     },
 }
 
-_INDICATORS_PATH = Path(__file__).parent / 'precomputed' / 'df_indicators.csv'
-_SENTENCES_PATH  = Path(__file__).parent / 'precomputed' / 'indicator_sentences.json'
-
-
-_GOV_EXP_PATH = Path(__file__).parent / 'precomputed' / 'df_gov_exp.csv'
-
-
-def load_gov_exp() -> pd.DataFrame:
-    """Load government expenditure by COFOG function (% of GDP), all 39 countries."""
-    if _GOV_EXP_PATH.exists():
-        return pd.read_csv(_GOV_EXP_PATH)
-    return pd.DataFrame(columns=['cntry', 'year'] + GOV_EXP_COLS)
-
 
 def load_indicators() -> tuple[pd.DataFrame, dict]:
     """Load per-country indicator values and contextualising sentences.
 
-    Returns (df_indicators, sentences) where:
-      df_indicators: DataFrame indexed by cntry with value + year columns
-      sentences:     {cntry: {col: sentence_str}}
+    Returns:
+        (df_indicators, sentences): df indexed by cntry; sentences keyed
+        {cntry: {col: sentence}}.
     """
-    import json
-    df = pd.read_csv(_INDICATORS_PATH).set_index('cntry') \
-        if _INDICATORS_PATH.exists() else pd.DataFrame()
-    sentences: dict = {}
-    if _SENTENCES_PATH.exists():
-        sentences = json.loads(_SENTENCES_PATH.read_text())
+    ind_path  = PRECOMPUTED_DIR / 'df_indicators.csv'
+    sent_path = PRECOMPUTED_DIR / 'indicator_sentences.json'
+    df = (pd.read_csv(ind_path).set_index('cntry')
+          if ind_path.exists() else pd.DataFrame())
+    sentences = json.loads(sent_path.read_text()) if sent_path.exists() else {}
     return df, sentences
 
 
-def hex_to_rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip('#')
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f'rgba({r},{g},{b},{alpha})'
+# ── Correlation tab metadata ───────────────────────────────────────────────────
 
+_ESS_AGG_NOTE = ('Weighted country mean (ESS analysis weight anweight), '
+                 'ESS Round 11 (2023)')
 
-# ── PCA + clustering ────────────────────────────────────────────────────────────
+# (column, short label, hover description)
+SCATTER_X_META = [
+    ('trust_mean',            'Social Trust',            'ESS ppltrst - interpersonal trust (0-10)'),
+    ('religiosity_mean',      'Religiosity',             'ESS rlgdgr - self-rated religiosity (0-10)'),
+    ('eduyrs_mean',           'Education Years',         'ESS eduyrs - mean full-time education years'),
+    ('safety_mean',           'Safety After Dark',       'ESS aesfdrk - 1=very safe, 4=very unsafe'),
+    ('lrscale_mean',          'Left-Right Scale',        'ESS lrscale - 0=far left, 10=far right'),
+    ('age_mean',              'Mean Age',                'ESS agea - mean respondent age (years)'),
+    ('urban_pct',             'Urbanisation (%)',        'ESS domicil - share urban / suburban respondents'),
+    ('diversity_pct',         'Migration Background (%)', 'ESS brncntr/facntr/mocntr - share born abroad or parent born abroad'),
+    ('v2x_libdem',            'Liberal Democracy',       'V-Dem v15 v2x_libdem (0-1), 2023'),
+    ('wb_gini',               'Gini Index',              'World Bank GINI index (0-100), 2023'),
+    ('wb_unemployment',       'Unemployment (%)',        'World Bank unemployment rate (% of labour force), 2023'),
+    ('wb_gdp_per_capita_ppp', 'GDP per Capita (PPP)',    'World Bank GDP/cap, PPP, constant 2017 int\'l $, 2023'),
+    ('gov_exp_health',           'Gov. Health Exp.',            'COFOG GF07: health (% of GDP), latest year'),
+    ('gov_exp_education',        'Gov. Education Exp.',         'COFOG GF09: education (% of GDP), latest year'),
+    ('gov_exp_social',           'Gov. Social Exp.',            'COFOG GF10: social protection (% of GDP), latest year'),
+    ('gov_exp_defence',          'Gov. Defence Exp.',           'COFOG GF02: defence (% of GDP), latest year'),
+    ('gov_exp_economic',         'Gov. Economic Exp.',          'COFOG GF04: economic affairs (% of GDP), latest year'),
+    ('gov_exp_public_services',  'Gov. Public Services Exp.',   'COFOG GF01: general public services (% of GDP), latest year'),
+    ('gov_exp_culture',          'Gov. Culture & Recreation Exp.', 'COFOG GF08: recreation, culture and religion (% of GDP), latest year'),
+]
 
-# Higher-order dimension → indices into VALUE_KEYS (for loading interpretation)
+SCATTER_X_DETAIL = {
+    'trust_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'ppltrst - "Most people can be trusted, or you can\'t be too careful"',
+        'scale':       '0 = can\'t be too careful · 10 = most people can be trusted',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'religiosity_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'rlgdgr - "Regardless of whether you belong to a particular religion, how religious are you?"',
+        'scale':       '0 = not religious at all · 10 = very religious',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'eduyrs_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'eduyrs - Years of full-time education completed',
+        'scale':       'Years (continuous); missing codes excluded',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'safety_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'aesfdrk - "How safe do you feel walking alone in your local area after dark?"',
+        'scale':       '1 = very safe · 4 = very unsafe (lower = safer)',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'lrscale_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'lrscale - "In politics people sometimes talk of \'left\' and \'right\'. Where would you place yourself?"',
+        'scale':       '0 = left · 10 = right',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'age_mean': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'agea - Age of respondent (calculated)',
+        'scale':       'Years (continuous)',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'urban_pct': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'domicil - "Which phrase on this card best describes the area where you live?"',
+        'scale':       '% of respondents in "a big city" or "suburbs / outskirts of big city"',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'diversity_pct': {
+        'source':      'European Social Survey (ESS), Round 11 (2023)',
+        'variable':    'brncntr, facntr, mocntr - born abroad or at least one parent born abroad',
+        'scale':       '% of respondents with migration background',
+        'aggregation': _ESS_AGG_NOTE,
+    },
+    'v2x_libdem': {
+        'source':      'V-Dem Project, Country-Year Dataset v15 (Coppedge et al., 2024)',
+        'variable':    'v2x_libdem - Liberal Democracy Index',
+        'scale':       '0-1 (higher = more liberal-democratic); composite of electoral, liberal, and participatory components',
+        'aggregation': 'Value for 2023 (newest ESS reference year)',
+    },
+    'wb_gini': {
+        'source':      'World Bank WDI (SI.POV.GINI) · Eurostat EU-SILC for HU',
+        'variable':    'SI.POV.GINI - Gini index of equivalised disposable income',
+        'scale':       '0-100 (higher = more unequal). Gaps filled with the nearest '
+                       'recent survey year (CH, DE, NL) or Eurostat EU-SILC (HU).',
+        'aggregation': 'Value for 2023; no imputation - all values from primary sources',
+    },
+    'wb_unemployment': {
+        'source':      'World Bank World Development Indicators (WDI)',
+        'variable':    'SL.UEM.TOTL.ZS - Unemployment, total (% of total labour force)',
+        'scale':       '% of labour force (ILO modelled estimates)',
+        'aggregation': 'Value for 2023',
+    },
+    'wb_gdp_per_capita_ppp': {
+        'source':      'World Bank World Development Indicators (WDI)',
+        'variable':    'NY.GDP.PCAP.PP.KD - GDP per capita, PPP (constant 2017 international $)',
+        'scale':       'Purchasing-power-parity adjusted, in 2017 USD',
+        'aggregation': 'Value for 2023',
+    },
+    'gov_exp_health': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF07 - Health',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_education': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF09 - Education',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_social': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF10 - Social protection',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_defence': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF02 - Defence',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_economic': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF04 - Economic affairs',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_public_services': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF01 - General public services',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+    'gov_exp_culture': {
+        'source':      'Eurostat Government Finance Statistics (COFOG classification)',
+        'variable':    'GF08 - Recreation, culture and religion',
+        'scale':       '% of GDP (sector S13 general government)',
+        'aggregation': 'Most recent available year per country',
+    },
+}
+
+# (column, display label) - colours come from theme.DIM_COLORS at figure level
+SCATTER_Y_META = [
+    ('dim_openness',      'Openness to Change'),
+    ('dim_transcendence', 'Self-Transcendence'),
+    ('dim_conservation',  'Conservation'),
+    ('dim_enhancement',   'Self-Enhancement'),
+]
+
+# ── Value Space dimension groups ───────────────────────────────────────────────
+DIMENSION_GROUPS: dict[str, dict] = {
+    'values': {
+        'label':        'Value Orientations',
+        'desc':         '10 Schwartz basic value Δ-scores (person-centred, weighted '
+                        'country means). Captures what people prioritise relative '
+                        'to their own response baseline.',
+        'cols':         [f'd_{k}' for k in VALUE_KEYS],
+        'spoke_labels': ['Self-Dir.', 'Universalism', 'Benevolence', 'Tradition',
+                         'Conformity', 'Security', 'Power', 'Achievement',
+                         'Hedonism', 'Stimulation'],
+        'source':       'df_main',
+    },
+    'attitudes': {
+        'label':        'Social Attitudes',
+        'desc':         'Weighted country means of six ESS attitude variables: '
+                        'interpersonal trust, religiosity, left-right self-placement, '
+                        'perceived safety, urbanisation rate, and mean age.',
+        'cols':         ['trust_mean', 'religiosity_mean', 'lrscale_mean',
+                         'safety_mean', 'urban_pct', 'age_mean'],
+        'spoke_labels': ['Trust', 'Religiosity', 'Left-Right', 'Safety',
+                         'Urban %', 'Mean Age'],
+        'source':       'df_scatter',
+    },
+    'economy': {
+        'label':        'Economic Structure',
+        'desc':         'Five macro-economic indicators: GDP per capita (PPP), '
+                        'income inequality (Gini), unemployment rate, migration '
+                        'background share, and mean years of education.',
+        'cols':         ['wb_gdp_per_capita_ppp', 'wb_gini', 'wb_unemployment',
+                         'diversity_pct', 'eduyrs_mean'],
+        'spoke_labels': ['GDP/cap', 'Gini', 'Unemployment', 'Migration %', 'Education'],
+        'source':       'df_scatter',
+    },
+    'gov_spending': {
+        'label':        'Government Spending',
+        'desc':         'Government expenditure by COFOG function as % of GDP: '
+                        'health, education, social protection, defence, and economic '
+                        'affairs. Source: Eurostat; most recent available year.',
+        'cols':         ['gov_exp_health', 'gov_exp_education', 'gov_exp_social',
+                         'gov_exp_defence', 'gov_exp_economic'],
+        'spoke_labels': ['Health', 'Education', 'Social', 'Defence', 'Economic'],
+        'source':       'df_gov_exp',
+    },
+}
+
+# ── PCA + K-Means with validation ──────────────────────────────────────────────
+
 _DIM_VALUE_IDX = {
-    'Openness to Change': [VALUE_KEYS.index('SD'), VALUE_KEYS.index('HE'), VALUE_KEYS.index('ST')],
-    'Self-Transcendence': [VALUE_KEYS.index('UN'), VALUE_KEYS.index('BE')],
-    'Conservation':       [VALUE_KEYS.index('TR'), VALUE_KEYS.index('CO'), VALUE_KEYS.index('SE')],
-    'Self-Enhancement':   [VALUE_KEYS.index('PO'), VALUE_KEYS.index('AC')],
+    'Openness to Change': ['SD', 'HE', 'ST'],
+    'Self-Transcendence': ['UN', 'BE'],
+    'Conservation':       ['TR', 'CO', 'SE'],
+    'Self-Enhancement':   ['PO', 'AC'],
 }
 
 
-def compute_pca_clustering(
-    df: pd.DataFrame,
-    round_year: int,
-    n_clusters: int = 3,
-    dim_group: str = 'values',
-) -> tuple:
-    """PCA (2 components) + KMeans for a chosen dimension group and ESS year.
+def _pc_axis_label(loading: np.ndarray, avail_cols: list[str],
+                   spoke_labels: list[str], is_values_group: bool) -> str:
+    """Human-readable label for one principal-component axis."""
+    if is_values_group:
+        dim_mean = {}
+        for dim, keys in _DIM_VALUE_IDX.items():
+            idx = [avail_cols.index(f'd_{k}') for k in keys
+                   if f'd_{k}' in avail_cols]
+            dim_mean[dim] = float(np.mean(loading[idx])) if idx else 0.0
+        ordered = sorted(dim_mean.items(), key=lambda kv: kv[1])
+        neg_dim, pos_dim = ordered[0][0], ordered[-1][0]
+        if abs(dim_mean[pos_dim]) > 0.10 and abs(dim_mean[neg_dim]) > 0.10:
+            return f'{pos_dim} ↔ {neg_dim}'
+        return 'Mixed'
+    top = int(np.argmax(np.abs(loading[:len(avail_cols)])))
+    label = spoke_labels[top] if top < len(spoke_labels) else avail_cols[top]
+    sign = '+' if loading[top] > 0 else '-'
+    return f'{sign}{label} (dominant)'
 
-    Parameters
-    ----------
-    df         : source DataFrame (df_main, df_scatter, or df_gov_exp depending on group)
-    round_year : ESS reference year to filter on
-    n_clusters : number of K-Means clusters
-    dim_group  : key into DIMENSION_GROUPS
 
-    Returns (result_df, explained_variance, pc1_label, pc2_label)
-    or      (None, None, None, None) if insufficient data.
+def compute_k_validation(X: np.ndarray, k_range: range = range(2, 7)) -> dict:
+    """Silhouette scores for a range of K-Means cluster counts.
+
+    Args:
+        X: Feature matrix used for clustering.
+        k_range: Candidate cluster counts.
+
+    Returns:
+        {'scores': {k: silhouette}, 'best_k': k with the highest score}.
     """
-    from sklearn.decomposition import PCA
     from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    scores: dict[int, float] = {}
+    for k in k_range:
+        if k >= len(X):
+            continue
+        labels = KMeans(n_clusters=k, random_state=42, n_init=10).fit_predict(X)
+        scores[k] = float(silhouette_score(X, labels))
+    best_k = max(scores, key=scores.get) if scores else None
+    return {'scores': scores, 'best_k': best_k}
+
+
+def compute_pca_clustering(df: pd.DataFrame, n_clusters: int = 3,
+                           dim_group: str = 'values') -> tuple:
+    """PCA (2 components) + K-Means for a chosen dimension group (ESS11 data).
+
+    Args:
+        df: Source DataFrame (df_main, df_scatter, or df_gov_exp).
+        n_clusters: Number of K-Means clusters.
+        dim_group: Key into DIMENSION_GROUPS.
+
+    Returns:
+        (result_df, explained_variance, pc1_label, pc2_label, validation)
+        where validation = {'scores': {k: silhouette}, 'best_k': int,
+        'chosen_score': float}; or (None, None, None, None, None) if there
+        is insufficient data.
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import silhouette_score
     from sklearn.preprocessing import StandardScaler
 
     group  = DIMENSION_GROUPS[dim_group]
-    cols   = group['cols']
     is_val = dim_group == 'values'
 
-    data = df[df['year'] == round_year].copy().reset_index(drop=True)
-    if data.empty:
-        return None, None, None, None
-
-    # Keep only rows with country names; drop rows missing any required column
+    data = df.copy().reset_index(drop=True)
     if 'country_name' not in data.columns:
         data['country_name'] = data['cntry'].map(COUNTRIES)
-    avail_cols = [c for c in cols if c in data.columns]
+    avail_cols = [c for c in group['cols'] if c in data.columns]
     if len(avail_cols) < 2:
-        return None, None, None, None
-
+        return None, None, None, None, None
     data = data.dropna(subset=avail_cols).reset_index(drop=True)
     if len(data) < 3:
-        return None, None, None, None
+        return None, None, None, None, None
 
     X_raw = data[avail_cols].values.astype(float)
-
-    # Schwartz Δ-scores are already comparable; others need z-scoring
-    if is_val:
-        X = X_raw
-    else:
-        X = StandardScaler().fit_transform(X_raw)
+    # Schwartz Δ-scores share one scale already; other groups need z-scoring
+    X = X_raw if is_val else StandardScaler().fit_transform(X_raw)
 
     pca      = PCA(n_components=2, random_state=42)
     coords   = pca.fit_transform(X)
-    km       = KMeans(n_clusters=min(n_clusters, len(data)), random_state=42, n_init=10)
+    k        = min(n_clusters, len(data) - 1)
+    km       = KMeans(n_clusters=k, random_state=42, n_init=10)
     clusters = km.fit_predict(X)
 
-    # PC axis labels
-    pc_labels = []
-    for loading in pca.components_:
-        if is_val:
-            dim_mean = {
-                dim: float(np.mean(loading[
-                    [avail_cols.index(f'd_{VALUE_KEYS[i]}')
-                     for i in idxs
-                     if f'd_{VALUE_KEYS[i]}' in avail_cols]
-                ])) if any(f'd_{VALUE_KEYS[i]}' in avail_cols for i in idxs) else 0.0
-                for dim, idxs in _DIM_VALUE_IDX.items()
-            }
-            ordered = sorted(dim_mean.items(), key=lambda x: x[1])
-            neg_dim, pos_dim = ordered[0][0], ordered[-1][0]
-            label = (f'{pos_dim} ↔ {neg_dim}'
-                     if abs(dim_mean[pos_dim]) > 0.10 and abs(dim_mean[neg_dim]) > 0.10
-                     else 'Mixed')
-        else:
-            # Label by the variable with the highest absolute loading
-            top_idx = int(np.argmax(np.abs(loading[:len(avail_cols)])))
-            sl = group.get('spoke_labels', avail_cols)
-            top_label = sl[top_idx] if top_idx < len(sl) else avail_cols[top_idx]
-            sign = '+' if loading[top_idx] > 0 else '-'
-            label = f'{sign}{top_label} (dominant)'
-        pc_labels.append(label)
+    validation = compute_k_validation(X)
+    validation['chosen_score'] = (
+        float(silhouette_score(X, clusters)) if k >= 2 else np.nan)
+
+    labels = [_pc_axis_label(l, avail_cols, group.get('spoke_labels', avail_cols),
+                             is_val)
+              for l in pca.components_]
 
     result = data[['cntry', 'country_name'] + avail_cols].copy()
-    result['pc1']     = coords[:, 0]
-    result['pc2']     = coords[:, 1]
+    result['pc1'], result['pc2'] = coords[:, 0], coords[:, 1]
     result['cluster'] = clusters
-
-    return result, pca.explained_variance_ratio_.tolist(), pc_labels[0], pc_labels[1]
-
-
+    return (result, pca.explained_variance_ratio_.tolist(),
+            labels[0], labels[1], validation)

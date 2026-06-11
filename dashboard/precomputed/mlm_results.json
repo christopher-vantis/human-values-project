@@ -1,0 +1,237 @@
+{
+ "method": "Linear mixed-effects models (statsmodels MixedLM, REML), random country intercepts. Individual predictors z-scored on the analysis sample; country predictors z-scored across countries. Unweighted ESS11 microdata.",
+ "models": {
+  "dim_openness": {
+   "outcome": "dim_openness",
+   "coefficients": [
+    {
+     "term": "age_z",
+     "label": "Age (z)",
+     "coef": -0.152,
+     "se": 0.0026,
+     "p": 0.0
+    },
+    {
+     "term": "female",
+     "label": "Female",
+     "coef": -0.0844,
+     "se": 0.0051,
+     "p": 1.0492443696062185e-62
+    },
+    {
+     "term": "eduyrs_z",
+     "label": "Education years (z)",
+     "coef": 0.0596,
+     "se": 0.0027,
+     "p": 9.14333250277181e-109
+    },
+    {
+     "term": "urban",
+     "label": "Urban residence",
+     "coef": 0.0425,
+     "se": 0.0055,
+     "p": 8.42318506219426e-15
+    },
+    {
+     "term": "relig_z",
+     "label": "Religiosity (z)",
+     "coef": -0.0794,
+     "se": 0.0027,
+     "p": 2.128685160770515e-191
+    },
+    {
+     "term": "gdp_z",
+     "label": "GDP per capita, country (z)",
+     "coef": 0.0475,
+     "se": 0.0263,
+     "p": 0.07042611053064018
+    },
+    {
+     "term": "gini_z",
+     "label": "Gini index, country (z)",
+     "coef": 0.0127,
+     "se": 0.0263,
+     "p": 0.6296541311652821
+    }
+   ],
+   "icc": 0.0749,
+   "n_obs": 47809,
+   "n_countries": 30,
+   "label": "Openness to Change"
+  },
+  "dim_transcendence": {
+   "outcome": "dim_transcendence",
+   "coefficients": [
+    {
+     "term": "age_z",
+     "label": "Age (z)",
+     "coef": 0.0854,
+     "se": 0.0023,
+     "p": 2.86102742747185e-296
+    },
+    {
+     "term": "female",
+     "label": "Female",
+     "coef": 0.1593,
+     "se": 0.0045,
+     "p": 7.344232381036514e-273
+    },
+    {
+     "term": "eduyrs_z",
+     "label": "Education years (z)",
+     "coef": 0.0279,
+     "se": 0.0024,
+     "p": 4.371091721597547e-31
+    },
+    {
+     "term": "urban",
+     "label": "Urban residence",
+     "coef": -0.0322,
+     "se": 0.0049,
+     "p": 4.9180968277110534e-11
+    },
+    {
+     "term": "relig_z",
+     "label": "Religiosity (z)",
+     "coef": -0.0182,
+     "se": 0.0024,
+     "p": 3.561526303746785e-14
+    },
+    {
+     "term": "gdp_z",
+     "label": "GDP per capita, country (z)",
+     "coef": 0.1082,
+     "se": 0.0379,
+     "p": 0.004323153885619024
+    },
+    {
+     "term": "gini_z",
+     "label": "Gini index, country (z)",
+     "coef": -0.0496,
+     "se": 0.0379,
+     "p": 0.1908828265013448
+    }
+   ],
+   "icc": 0.1827,
+   "n_obs": 47809,
+   "n_countries": 30,
+   "label": "Self-Transcendence"
+  },
+  "dim_conservation": {
+   "outcome": "dim_conservation",
+   "coefficients": [
+    {
+     "term": "age_z",
+     "label": "Age (z)",
+     "coef": 0.1816,
+     "se": 0.0026,
+     "p": 0.0
+    },
+    {
+     "term": "female",
+     "label": "Female",
+     "coef": 0.0635,
+     "se": 0.005,
+     "p": 3.7434401907628693e-37
+    },
+    {
+     "term": "eduyrs_z",
+     "label": "Education years (z)",
+     "coef": -0.0928,
+     "se": 0.0027,
+     "p": 1.8456739269841906e-267
+    },
+    {
+     "term": "urban",
+     "label": "Urban residence",
+     "coef": -0.0616,
+     "se": 0.0054,
+     "p": 4.763121777410588e-30
+    },
+    {
+     "term": "relig_z",
+     "label": "Religiosity (z)",
+     "coef": 0.106,
+     "se": 0.0027,
+     "p": 0.0
+    },
+    {
+     "term": "gdp_z",
+     "label": "GDP per capita, country (z)",
+     "coef": -0.0569,
+     "se": 0.0233,
+     "p": 0.014765982584307736
+    },
+    {
+     "term": "gini_z",
+     "label": "Gini index, country (z)",
+     "coef": -0.0193,
+     "se": 0.0233,
+     "p": 0.40771607425299383
+    }
+   ],
+   "icc": 0.0686,
+   "n_obs": 47809,
+   "n_countries": 30,
+   "label": "Conservation"
+  },
+  "dim_enhancement": {
+   "outcome": "dim_enhancement",
+   "coefficients": [
+    {
+     "term": "age_z",
+     "label": "Age (z)",
+     "coef": -0.158,
+     "se": 0.0032,
+     "p": 0.0
+    },
+    {
+     "term": "female",
+     "label": "Female",
+     "coef": -0.1673,
+     "se": 0.0063,
+     "p": 5.3297197889290355e-157
+    },
+    {
+     "term": "eduyrs_z",
+     "label": "Education years (z)",
+     "coef": 0.0072,
+     "se": 0.0033,
+     "p": 0.031409254501891026
+    },
+    {
+     "term": "urban",
+     "label": "Urban residence",
+     "coef": 0.0696,
+     "se": 0.0068,
+     "p": 1.3152901026551612e-24
+    },
+    {
+     "term": "relig_z",
+     "label": "Religiosity (z)",
+     "coef": -0.0127,
+     "se": 0.0033,
+     "p": 0.000134582147732601
+    },
+    {
+     "term": "gdp_z",
+     "label": "GDP per capita, country (z)",
+     "coef": -0.1157,
+     "se": 0.0507,
+     "p": 0.022385533237573793
+    },
+    {
+     "term": "gini_z",
+     "label": "Gini index, country (z)",
+     "coef": 0.0758,
+     "se": 0.0507,
+     "p": 0.13468025216039858
+    }
+   ],
+   "icc": 0.1489,
+   "n_obs": 47809,
+   "n_countries": 30,
+   "label": "Self-Enhancement"
+  }
+ }
+}
