@@ -912,3 +912,26 @@ body {
   .explore-grid, .method-grid, .limitation-grid { grid-template-columns: 1fr; }
   .header-chip { display: none; }
 }
+
+/* ── Hero: personal intro additions ─────────────────────────────────────────── */
+.hero-subline {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: #9db4dd;
+  line-height: 1.6;
+}
+
+.hero-visit {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: #c4d2ee;
+}
+
+.hero-link {
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.hero-link:hover { color: #dbe6ff; }

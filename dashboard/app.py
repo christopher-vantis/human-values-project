@@ -150,7 +150,12 @@ footer = html.Footer([
     html.Div([
         html.P('About', className='footer-heading'),
         html.P([
-            'Built by Christopher Vantis · ',
+            'Built by ',
+            html.A('Christopher Vantis',
+                   href='https://christopher-vantis.ch/',
+                   target='_blank', rel='noopener',
+                   className='footer-link'),
+            ' · ',
             html.A('Source on GitHub',
                    href='https://github.com/christopher-vantis/'
                         'human-values-project',

@@ -246,18 +246,33 @@ hero = html.Div([
     html.Div([
         html.H2('What do Europeans value - and why does it differ?',
                 className='hero-title'),
+        html.P([
+            'The European Values Atlas is a personal side project, which '
+            'grew out of my bachelor\'s thesis in sociology at the '
+            'University of Zurich - ', html.Em('"Demokratie und '
+            'Universalismus"'), ' (Democracy and Universalism, 2025) - '
+            'which asked whether liberal democracies foster universalistic '
+            'values, combining ESS microdata with macro-level democracy '
+            'indicators.',
+        ], className='hero-subtitle'),
         html.P(
-            'Schwartz basic human values across 30 European countries, '
-            'measured in the European Social Survey Round 11 (2023), mapped '
-            'from the national level down to regions and social groups, and '
-            'linked to macro-level indicators.',
-            className='hero-subtitle'),
+            'Here, that question widens: Schwartz basic human values across '
+            '30 European countries (ESS Round 11, 2023), mapped from the '
+            'national level down to regions and social groups.',
+            className='hero-subline'),
         html.Div([
             dmc.Button('Explore country profiles', id='hero-btn-profile',
                        n_clicks=0, size='sm', radius='md'),
             dmc.Button('Regional deep dive', id='hero-btn-deep',
                        n_clicks=0, size='sm', radius='md', variant='white'),
         ], className='hero-buttons'),
+        html.P([
+            'For more projects or information about me and my work, visit ',
+            html.A('christopher-vantis.ch',
+                   href='https://christopher-vantis.ch/',
+                   target='_blank', rel='noopener', className='hero-link'),
+            ' :)',
+        ], className='hero-visit'),
     ], className='hero-text'),
     html.Div([
         _hero_stat('30',     'countries'),
@@ -371,33 +386,33 @@ landing = html.Div([
         html.Div([
             html.Div([
                 html.P([
-                    'The European Values Atlas is a ',
-                    html.B('personal side project by Christopher Vantis'),
-                    '. It grew out of my bachelor\'s thesis in sociology at '
-                    'the University of Zurich - ',
-                    html.Em('"Demokratie und Universalismus"'),
-                    ' (Democracy and Universalism, 2025) - which asked '
-                    'whether liberal democracies foster universalistic '
-                    'values, combining ESS microdata with macro-level '
-                    'democracy indicators.',
-                ], className='lp-p'),
-                html.P([
-                    'The atlas widens that question into an interactive '
-                    'exploration: instead of one value and one indicator, it '
-                    'maps all ten Schwartz values across countries, regions, '
-                    'and social groups, and links them to the societal '
+                    'My thesis looked at one value (Universalism) and one '
+                    'macro condition (liberal democracy). The atlas widens '
+                    'that question into an interactive exploration: it maps '
+                    'all ten Schwartz values across countries, regions, and '
+                    'social groups, and links them to the societal '
                     'conditions they coexist with. It is also my playground '
                     'for building statistically honest, well-designed data '
                     'products with Python and Plotly Dash - the full source '
                     'is open.',
                 ], className='lp-p'),
-                dmc.Anchor(
-                    dmc.Button('View the source on GitHub', size='compact-sm',
-                               radius='md', variant='light'),
-                    href='https://github.com/christopher-vantis/'
-                         'human-values-project',
-                    target='_blank',
-                ),
+                html.Div([
+                    dmc.Anchor(
+                        dmc.Button('View the source on GitHub',
+                                   size='compact-sm', radius='md',
+                                   variant='light'),
+                        href='https://github.com/christopher-vantis/'
+                             'human-values-project',
+                        target='_blank',
+                    ),
+                    dmc.Anchor(
+                        dmc.Button('More about me & my work',
+                                   size='compact-sm', radius='md',
+                                   variant='subtle'),
+                        href='https://christopher-vantis.ch/',
+                        target='_blank',
+                    ),
+                ], className='hero-buttons'),
             ], className='about-text'),
         ], className='about-block'),
     ], className='lp-section'),
