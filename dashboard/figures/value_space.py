@@ -12,7 +12,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 import theme
-from data_pipeline import COUNTRIES, ESS_ROUND, ESS_YEAR
+from data_pipeline import COUNTRIES, COUNTRY_FLAGS, ESS_ROUND, ESS_YEAR
 
 CLUSTER_COLORS = theme.CLUSTER_COLORS
 
@@ -79,16 +79,13 @@ def _glyph_traces(result, glyph_size: float, max_abs: dict,
 
 
 def _label_traces(result) -> list[go.Scatter]:
-    """Short ISO-code label below each glyph centre.
-
-    Codes instead of full names keep dense regions legible; the hover
-    card carries the full country name.
-    """
+    """Country name + flag label below each glyph centre."""
     return [go.Scatter(
         x=[float(row['pc1'])], y=[float(row['pc2'])],
         mode='text',
-        text=[row['cntry']],
-        textfont=dict(size=10, color=theme.INK, weight=600),
+        text=[f"{COUNTRY_FLAGS.get(row['cntry'], '')}<br>"
+              f"{COUNTRIES.get(row['cntry'], row['cntry'])}"],
+        textfont=dict(size=10, color=theme.INK),
         textposition='bottom center',
         showlegend=False,
         hoverinfo='skip',
@@ -105,7 +102,8 @@ def _hover_traces(result, data_cols: list[str],
             v = row.get(col)
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 var_lines.append(f'{lbl}: {float(v):.2f}')
-        hover = (f"<b>{COUNTRIES.get(row['cntry'], row['cntry'])}</b><br>"
+        hover = (f"<b>{COUNTRY_FLAGS.get(row['cntry'], '')} "
+                 f"{COUNTRIES.get(row['cntry'], row['cntry'])}</b><br>"
                  f"Cluster {int(row['cluster']) + 1}<br><br>"
                  + '<br>'.join(var_lines))
         traces.append(go.Scatter(

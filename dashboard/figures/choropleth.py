@@ -1,9 +1,10 @@
 """Regional choropleth + regional indicator scatter (Country Deep Dive tab).
 
-Maps NUTS-level weighted Schwartz scores (Germany NUTS-1, Switzerland
-NUTS-2) onto GISCO boundaries. Regions with fewer than MIN_REGION_N
-respondents (or with no respondents at all, e.g. Bremen in ESS11) are
-drawn in grey instead of pretending the estimate is reliable.
+Maps NUTS-level weighted Schwartz scores onto GISCO boundaries for every
+ESS11 country with NUTS region codes. Countries report different NUTS
+levels (NUTS-1 to NUTS-3; NUTS-3 is rolled up to NUTS-2 upstream). Regions
+with fewer than MIN_REGION_N respondents - or without any respondents -
+are drawn in grey instead of pretending the estimate is reliable.
 """
 from __future__ import annotations
 
@@ -12,21 +13,42 @@ import pandas as pd
 import plotly.graph_objects as go
 
 import theme
-from data_pipeline import DEEP_DIVE_COUNTRIES, MIN_REGION_N
-from figures.scatter import _regress_ci
+from data_pipeline import COUNTRIES, MIN_REGION_N
+
+# ESS country codes whose NUTS ids use a different prefix
+_NUTS_PREFIX = {'GB': 'UK', 'GR': 'EL'}
+
+# Regions with data but no map geometry (overseas, excluded for readability)
+_NAME_FALLBACK = {'ES70': 'Canarias'}
 
 
 def region_names(geojson: dict) -> dict[str, str]:
     """Map NUTS_ID -> NUTS_NAME from the trimmed GeoJSON."""
-    return {f['properties']['NUTS_ID']: f['properties']['NUTS_NAME']
-            for f in geojson.get('features', [])}
+    names = {f['properties']['NUTS_ID']: f['properties']['NUTS_NAME']
+             for f in geojson.get('features', [])}
+    return {**_NAME_FALLBACK, **names}
 
 
-def _country_features(geojson: dict, country: str) -> dict:
-    """FeatureCollection trimmed to one deep-dive country."""
+def _country_features(geojson: dict, country: str, level: int) -> dict:
+    """FeatureCollection trimmed to one country at one NUTS level."""
+    prefix = _NUTS_PREFIX.get(country, country)
     feats = [f for f in geojson.get('features', [])
-             if f['properties']['NUTS_ID'].startswith(country)]
+             if (f['properties']['NUTS_ID'].startswith(prefix)
+                 and len(f['properties']['NUTS_ID']) == level + 2)]
     return {'type': 'FeatureCollection', 'features': feats}
+
+
+def _no_map_figure(country: str) -> go.Figure:
+    """Empty state for countries without NUTS geometry (IL, UA)."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=(f'No regional map available for {COUNTRIES.get(country, country)}'
+              '<br>(ESS region codes lie outside the NUTS system).<br>'
+              'Social gradients below still apply.'),
+        x=0.5, y=0.5, showarrow=False, xref='paper', yref='paper',
+        font=dict(size=13, color=theme.MUTED))
+    fig.update_layout(height=520, margin=dict(t=48, b=8, l=8, r=8))
+    return fig
 
 
 def _grey_trace(gj: dict, regions: list[str], names: dict[str, str],
@@ -53,41 +75,49 @@ def make_choropleth(df_regional: pd.DataFrame, geojson: dict, country: str,
     Args:
         df_regional: Regional aggregates (df_regional).
         geojson: Trimmed GISCO FeatureCollection (load_geojson()).
-        country: 'DE' or 'CH'.
+        country: ISO-2 ESS country code.
         score_col: Score column (d_* or dim_*).
         score_label: Display name for the score.
 
     Returns:
-        Plotly choropleth figure with a diverging scale centred at 0.
+        Plotly choropleth figure with a diverging scale centred at 0, or
+        an explanatory empty state if the country has no NUTS regions.
     """
-    gj    = _country_features(geojson, country)
+    sub = df_regional[df_regional['cntry'] == country].copy()
+    if sub.empty:
+        return _no_map_figure(country)
+
+    level = int(sub['region'].str.len().mode()[0]) - 2
+    gj    = _country_features(geojson, country, level)
     names = region_names(geojson)
-    sub   = df_regional[df_regional['cntry'] == country].copy()
 
     reliable = sub[~sub['below_min_n']]
     small    = sub[sub['below_min_n']]
     missing  = [f['properties']['NUTS_ID'] for f in gj['features']
                 if f['properties']['NUTS_ID'] not in set(sub['region'])]
 
-    z_max = max(float(reliable[score_col].abs().max()), 0.05)
+    z_max = max(float(reliable[score_col].abs().max())
+                if not reliable.empty else 0.0, 0.05)
     fig = go.Figure()
-    fig.add_trace(go.Choropleth(
-        geojson=gj,
-        locations=reliable['region'],
-        z=reliable[score_col],
-        featureidkey='properties.NUTS_ID',
-        colorscale=theme.DIVERGING_SCALE,
-        zmid=0, zmin=-z_max, zmax=z_max,
-        marker=dict(line=dict(color='white', width=1)),
-        colorbar=dict(title=dict(text='Δ-score', side='right'),
-                      thickness=12, len=0.62, tickfont=dict(size=10)),
-        customdata=np.stack([reliable['region'].map(names).fillna(reliable['region']),
-                             reliable[score_col].round(3),
-                             reliable['n']], axis=1),
-        hovertemplate=(f'<b>%{{customdata[0]}}</b><br>{score_label}: '
-                       'Δ = %{customdata[1]}<br>n = %{customdata[2]} respondents'
-                       '<extra></extra>'),
-    ))
+    if not reliable.empty:
+        fig.add_trace(go.Choropleth(
+            geojson=gj,
+            locations=reliable['region'],
+            z=reliable[score_col],
+            featureidkey='properties.NUTS_ID',
+            colorscale=theme.DIVERGING_SCALE,
+            zmid=0, zmin=-z_max, zmax=z_max,
+            marker=dict(line=dict(color='white', width=1)),
+            colorbar=dict(title=dict(text='Δ-score', side='right'),
+                          thickness=12, len=0.62, tickfont=dict(size=10)),
+            customdata=np.stack(
+                [reliable['region'].map(names).fillna(reliable['region']),
+                 reliable[score_col].round(3),
+                 reliable['n']], axis=1),
+            hovertemplate=(f'<b>%{{customdata[0]}}</b><br>{score_label}: '
+                           'Δ = %{customdata[1]}<br>n = %{customdata[2]} '
+                           'respondents<extra></extra>'),
+        ))
 
     grey_reason = {r: f'n < {MIN_REGION_N} respondents - estimate suppressed'
                    for r in small['region']}
@@ -107,8 +137,7 @@ def make_choropleth(df_regional: pd.DataFrame, geojson: dict, country: str,
         margin=dict(t=48, b=8, l=8, r=8),
         title=dict(
             text=(f'<b>{score_label}</b> across '
-                  f'{DEEP_DIVE_COUNTRIES[country]["label"]} '
-                  f'(NUTS-{DEEP_DIVE_COUNTRIES[country]["nuts_level"]})'),
+                  f'{COUNTRIES.get(country, country)} (NUTS-{level})'),
             font=dict(size=14, color=theme.INK),
         ),
         dragmode=False,
@@ -130,7 +159,7 @@ def make_regional_scatter(df_regional: pd.DataFrame, df_indicators: pd.DataFrame
         df_indicators: Long Eurostat indicator table (region, indicator,
             value, year).
         geojson: Trimmed GISCO FeatureCollection (for region names).
-        country: 'DE' or 'CH'.
+        country: ISO-2 ESS country code.
         score_col: Score column (d_* or dim_*).
         score_label: Display name for the score.
         indicator_key: Key in the indicator table.
@@ -139,6 +168,8 @@ def make_regional_scatter(df_regional: pd.DataFrame, df_indicators: pd.DataFrame
     Returns:
         Plotly scatter figure with OLS fit and an honest small-N note.
     """
+    from figures.scatter import _regress_ci
+
     names = region_names(geojson)
     sub = df_regional[(df_regional['cntry'] == country)
                       & (~df_regional['below_min_n'])].copy()
@@ -146,12 +177,13 @@ def make_regional_scatter(df_regional: pd.DataFrame, df_indicators: pd.DataFrame
     sub = sub.merge(ind[['region', 'value', 'year']], on='region', how='inner')
 
     fig = go.Figure()
-    if sub.empty:
-        fig.add_annotation(text='Indicator not available for this country.',
-                           x=0.5, y=0.5, xref='paper', yref='paper',
-                           showarrow=False,
-                           font=dict(size=13, color=theme.MUTED))
-        fig.update_layout(height=420)
+    if len(sub) < 3:
+        fig.add_annotation(
+            text='Not enough regions with reliable estimates and indicator '
+                 'data for this combination.',
+            x=0.5, y=0.5, xref='paper', yref='paper', showarrow=False,
+            font=dict(size=13, color=theme.MUTED))
+        fig.update_layout(height=440)
         return fig
 
     x = sub['value'].values.astype(float)
@@ -172,9 +204,11 @@ def make_regional_scatter(df_regional: pd.DataFrame, df_indicators: pd.DataFrame
             showlegend=False, hoverinfo='skip'))
 
     labels = sub['region'].map(names).fillna(sub['region'])
+    # Region-name labels clutter quickly; show them only on sparse maps
+    mode = 'markers+text' if len(sub) <= 14 else 'markers'
     fig.add_trace(go.Scatter(
         x=x, y=y,
-        mode='markers+text',
+        mode=mode,
         text=labels,
         textposition='top center',
         textfont=dict(size=9.5, color=theme.MUTED),

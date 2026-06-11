@@ -16,7 +16,7 @@ The Schwartz model proposes that 10 basic human values - arranged in a circular 
 |-----|-------------|
 | **About** | Hero overview, theory background, data & methods documentation, honest limitations |
 | **Country Profile** | Radar chart of one country's value profile (weighted Δ-scores), country facts card, and 12 structural indicators |
-| **Country Deep Dive** | Regional choropleths for Germany (NUTS-1) and Switzerland (NUTS-2), regional correlates from Eurostat (GDP, unemployment, education, age, density), and social gradients (age, education, urbanisation, gender, religiosity, East/West Germany, Swiss language regions) |
+| **Country Deep Dive** | Regional choropleths for all ESS11 countries (NUTS-1/2; NUTS-3 reporting rolled up to NUTS-2), regional correlates from Eurostat (GDP, unemployment, education, age, density), and social gradients (age, education, urbanisation, gender, religiosity, plus East/West Germany and Swiss language regions) |
 | **Correlations** | FDR-corrected correlation heatmap (19 predictors × 4 dimensions), click-through scatter plots with OLS fit and 95 % CI, plus multilevel models (random country intercepts, ICC) that separate composition from context |
 | **Value Space** | Countries projected into 2D by profile similarity (PCA + K-Means) with silhouette-based cluster validation |
 

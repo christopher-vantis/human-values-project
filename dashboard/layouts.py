@@ -12,7 +12,6 @@ from dash import Input, Output, State, dcc, html
 
 import data_pipeline as dp
 import theme
-from figures.circumplex import make_circumplex
 
 DEFAULT_COUNTRY      = 'DE'
 DEFAULT_DEEP_COUNTRY = 'DE'
@@ -47,7 +46,8 @@ def flag_img(cntry: str, height: int = 13) -> html.Img:
 
 # ── Dropdown option lists ──────────────────────────────────────────────────────
 
-COUNTRY_OPTS = [{'value': c, 'label': dp.COUNTRIES[c]}
+COUNTRY_OPTS = [{'value': c,
+                 'label': f'{dp.COUNTRY_FLAGS.get(c, "")} {dp.COUNTRIES[c]}'}
                 for c in sorted(dp.ESS11_COUNTRIES,
                                 key=lambda c: dp.COUNTRIES[c])]
 
@@ -73,12 +73,7 @@ SCATTER_Y_OPTS = ([{'value': 'all', 'label': 'All 4 dimensions (2×2)'}]
 DIM_GROUP_OPTS = [{'value': key, 'label': grp['label']}
                   for key, grp in dp.DIMENSION_GROUPS.items()]
 
-DEEP_COUNTRY_OPTS = [
-    {'value': c,
-     'label': html.Span([flag_img(c), html.Span(meta['label'])],
-                        className='seg-label')}
-    for c, meta in dp.DEEP_DIVE_COUNTRIES.items()
-]
+# Deep dive covers every ESS11 country (IL/UA without a regional map)
 
 
 # ── Small pure helpers ─────────────────────────────────────────────────────────
@@ -278,8 +273,8 @@ _EXPLORE_CARDS = [
      'One country\'s value priorities as a radar profile, with structural '
      'indicators and what makes it stand out in Europe.'),
     ('Country Deep Dive', 'tab-deep', 'lp-open-deep',
-     'Value maps of German Bundesländer and Swiss Grossregionen, regional '
-     'correlates, and social gradients.'),
+     'Regional value maps for every ESS11 country, regional correlates, '
+     'and social gradients within each society.'),
     ('Correlations', 'tab-corr', 'lp-open-corr',
      'Which societal conditions go together with which value priorities - '
      'FDR-corrected, with multilevel models.'),
@@ -319,9 +314,9 @@ _METHOD_CARDS = [
      'The correlation matrix runs 76 tests at once. Significance stars use '
      'Benjamini-Hochberg FDR-adjusted q-values, not raw p-values.'),
     ('Honest small samples',
-     'Regions with fewer than 50 respondents are greyed out on the maps; '
-     'groups under 30 are dropped; regional correlations are labelled '
-     'exploratory.'),
+     'Regions with fewer than 50 respondents are greyed out on the maps '
+     '(NUTS-3 reporting is rolled up to NUTS-2); groups under 30 are '
+     'dropped; regional correlations are labelled exploratory.'),
     ('External sources',
      'V-Dem v15, World Bank WDI, Eurostat (COFOG, regional statistics, '
      'GISCO NUTS boundaries), EIGE, Transparency International, World '
@@ -372,10 +367,48 @@ landing = html.Div([
                 html.P('Hover any sector of the wheel for the value\'s '
                        'motivational goal.', className='side-note'),
             ], className='lp-theory-text'),
-            dcc.Graph(figure=make_circumplex(),
-                      config={'displayModeBar': False},
-                      className='lp-circumplex'),
+            html.Img(src='/assets/circumplex.svg',
+                     alt='The Schwartz value circumplex: ten values arranged '
+                         'in a circle, grouped into four higher-order '
+                         'dimensions',
+                     className='lp-circumplex'),
         ], className='lp-theory-grid'),
+    ], className='lp-section'),
+
+    html.Div([
+        html.H2('Why this exists', className='lp-h2'),
+        html.Div([
+            html.Div([
+                html.P([
+                    'The European Values Atlas is a ',
+                    html.B('personal side project by Christopher Vantis'),
+                    '. It grew out of my bachelor\'s thesis in sociology at '
+                    'the University of Zurich - ',
+                    html.Em('"Demokratie und Universalismus"'),
+                    ' (Democracy and Universalism, 2025) - which asked '
+                    'whether liberal democracies foster universalistic '
+                    'values, combining ESS microdata with macro-level '
+                    'democracy indicators.',
+                ], className='lp-p'),
+                html.P([
+                    'The atlas widens that question into an interactive '
+                    'exploration: instead of one value and one indicator, it '
+                    'maps all ten Schwartz values across countries, regions, '
+                    'and social groups, and links them to the societal '
+                    'conditions they coexist with. It is also my playground '
+                    'for building statistically honest, well-designed data '
+                    'products with Python and Plotly Dash - the full source '
+                    'is open.',
+                ], className='lp-p'),
+                dmc.Anchor(
+                    dmc.Button('View the source on GitHub', size='compact-sm',
+                               radius='md', variant='light'),
+                    href='https://github.com/christopher-vantis/'
+                         'human-values-project',
+                    target='_blank',
+                ),
+            ], className='about-text'),
+        ], className='about-block'),
     ], className='lp-section'),
 
     html.Div([
@@ -491,19 +524,19 @@ tab_deep = html.Div([
                 'Regional estimates (weighted), regional structure '
                 'correlates, and social gradients - ESS Round 11 (2023).'),
             ctrl_group('Country',
-                       dmc.SegmentedControl(
-                           id='td-country', data=DEEP_COUNTRY_OPTS,
-                           value=DEFAULT_DEEP_COUNTRY, fullWidth=True,
-                           size='sm', radius='md')),
+                       select('td-country', COUNTRY_OPTS,
+                              DEFAULT_DEEP_COUNTRY, searchable=True)),
             ctrl_group('Value score',
                        select('td-score', SCORE_OPTS, DEFAULT_SCORE)),
             html.Div(id='td-region-note', className='side-note'),
             info_accordion('Methods', [
                 ('Regional estimates',
-                 'Weighted means of person-centred scores per NUTS region '
-                 '(Germany: NUTS-1 Bundesländer; Switzerland: NUTS-2 '
-                 'Grossregionen). Regions with n < 50 respondents are greyed '
-                 'out; Bremen has no ESS11 respondents at all.'),
+                 'Weighted means of person-centred scores per NUTS region. '
+                 'Countries report different NUTS levels in the ESS '
+                 '(e.g. Germany NUTS-1 Bundesländer, most countries NUTS-2); '
+                 'NUTS-3 codes are rolled up to NUTS-2. Regions with n < 50 '
+                 'respondents are greyed out. Israel and Ukraine have no '
+                 'NUTS regions and show social gradients only.'),
                 ('Regional correlates',
                  'Eurostat regional indicators (latest available year) '
                  'against regional value scores. Because national '

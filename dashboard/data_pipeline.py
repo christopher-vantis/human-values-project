@@ -167,10 +167,10 @@ _DIM_VALUES = {
 DELTA_RANGE = [-1.5, 1.5]
 
 # ── Deep-dive (regional) configuration ─────────────────────────────────────────
-DEEP_DIVE_COUNTRIES = {
-    'DE': {'label': 'Germany',     'nuts_level': 1, 'prefix': 'DE'},
-    'CH': {'label': 'Switzerland', 'nuts_level': 2, 'prefix': 'CH'},
-}
+# Countries whose ESS region codes lie outside the NUTS system (no GISCO
+# geometry, no Eurostat regional indicators) - they keep social gradients
+# but get no regional map.
+NO_NUTS_COUNTRIES = {'IL', 'UA'}
 
 # East/West classification of German NUTS-1 regions (new Länder vs. old)
 _DE_EAST   = {'DE4', 'DE8', 'DED', 'DEE', 'DEG'}
@@ -371,19 +371,25 @@ def build_country_aggregates(micro: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_regional_aggregates(micro: pd.DataFrame) -> pd.DataFrame:
-    """NUTS-region weighted Schwartz aggregates for the deep-dive countries.
+    """NUTS-region weighted Schwartz aggregates for all mappable countries.
 
-    Regions with fewer than MIN_REGION_N respondents are kept but flagged
-    via ``below_min_n`` so the UI can grey them out.
+    Countries report regions at different NUTS levels in ESS11; NUTS-3
+    codes (5 characters) are rolled up to their NUTS-2 parent so estimates
+    stay reasonably sized and match Eurostat indicator coverage. Regions
+    with fewer than MIN_REGION_N respondents are kept but flagged via
+    ``below_min_n`` so the UI can grey them out.
 
     Args:
         micro: Person-scored microdata.
 
     Returns:
-        One row per (cntry, region) for DE (NUTS-1) and CH (NUTS-2).
+        One row per (cntry, region); IL and UA excluded (no NUTS geometry).
     """
-    sub = micro[micro['cntry'].isin(DEEP_DIVE_COUNTRIES)].copy()
-    sub = sub[sub['region'].str.match(r'^(DE.|CH..)$', na=False)]
+    sub = micro[~micro['cntry'].isin(NO_NUTS_COUNTRIES)].copy()
+    sub = sub[sub['region'].str.match(r'^[A-Z]{2}[0-9A-Z]{1,3}$', na=False)]
+    # NUTS-3 -> NUTS-2 roll-up (parent code = first four characters)
+    sub['region'] = sub['region'].where(sub['region'].str.len() <= 4,
+                                        sub['region'].str[:4])
     agg = _aggregate_scores(sub, ['cntry', 'region'])
     agg['below_min_n'] = agg['n'] < MIN_REGION_N
     return agg.sort_values(['cntry', 'region']).reset_index(drop=True)
@@ -424,7 +430,7 @@ def _gradient_groups(df: pd.DataFrame, var: str) -> pd.Series:
 
 
 def build_gradients(micro: pd.DataFrame) -> pd.DataFrame:
-    """Within-country social gradients for the deep-dive countries.
+    """Within-country social gradients for all ESS11 countries.
 
     Args:
         micro: Person-scored microdata.
@@ -435,7 +441,7 @@ def build_gradients(micro: pd.DataFrame) -> pd.DataFrame:
         dropped.
     """
     frames = []
-    for cntry in DEEP_DIVE_COUNTRIES:
+    for cntry in ESS11_COUNTRIES:
         sub = micro[micro['cntry'] == cntry]
         for var, meta in GRADIENT_VARS.items():
             if 'countries' in meta and cntry not in meta['countries']:

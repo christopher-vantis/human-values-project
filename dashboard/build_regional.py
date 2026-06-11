@@ -1,10 +1,15 @@
 """Build the regional assets for the Country Deep Dive tab (run locally).
 
 Produces two files in dashboard/precomputed/:
-  - nuts_regions.geojson         trimmed GISCO NUTS-2021 boundaries
-                                 (Germany NUTS-1 + Switzerland NUTS-2)
+  - nuts_regions.geojson         trimmed GISCO NUTS-2021 boundaries for
+                                 every region observed in df_regional.csv
+                                 (plus same-level context regions so areas
+                                 without respondents can be greyed out)
   - df_regional_indicators.csv   Eurostat regional indicators, latest
                                  available year per region
+
+Run AFTER export_precomputed.py - the region list is read from the
+precomputed regional aggregates, so no raw ESS data is needed here.
 
 Usage:
     python dashboard/build_regional.py
@@ -22,17 +27,17 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
 log = logging.getLogger(__name__)
 
 PRECOMPUTED_DIR = Path(__file__).parent / 'precomputed'
+REGIONAL_CSV    = PRECOMPUTED_DIR / 'df_regional.csv'
 
-# German NUTS-1 (Bundesländer) + Swiss NUTS-2 (Grossregionen), NUTS 2021
-DE_NUTS1 = ['DE1', 'DE2', 'DE3', 'DE4', 'DE5', 'DE6', 'DE7', 'DE8', 'DE9',
-            'DEA', 'DEB', 'DEC', 'DED', 'DEE', 'DEF', 'DEG']
-CH_NUTS2 = ['CH01', 'CH02', 'CH03', 'CH04', 'CH05', 'CH06', 'CH07']
-ALL_REGIONS = DE_NUTS1 + CH_NUTS2
+# Overseas territories distort fitbounds so badly that the mainland map
+# becomes unreadable - they are dropped from the context geometry.
+OVERSEAS_PREFIXES = ('FRY', 'ES70', 'PT20', 'PT30')
 
 _GISCO_BASE = ('https://gisco-services.ec.europa.eu/distribution/v2/nuts/'
                'geojson/NUTS_RG_10M_2021_4326_LEVL_{level}.geojson')
 _ESTAT_BASE = ('https://ec.europa.eu/eurostat/api/dissemination/'
                'statistics/1.0/data/{dataset}')
+_GEO_BATCH = 40   # regions per Eurostat API call (keeps URLs short)
 
 # indicator key -> (dataset, fixed dimension filters)
 REGIONAL_DATASETS: dict[str, tuple[str, dict]] = {
@@ -46,28 +51,68 @@ REGIONAL_DATASETS: dict[str, tuple[str, dict]] = {
 }
 
 
-def fetch_geojson() -> dict:
-    """Download GISCO NUTS boundaries and trim to the deep-dive regions.
+def load_observed_regions() -> pd.DataFrame:
+    """Region codes observed in the ESS11 aggregates (from precomputed CSV).
 
     Returns:
-        FeatureCollection with DE NUTS-1 and CH NUTS-2 features; properties
-        reduced to NUTS_ID and NUTS_NAME.
+        df_regional with cntry and region columns.
+
+    Raises:
+        FileNotFoundError: if export_precomputed.py has not been run yet.
     """
+    if not REGIONAL_CSV.exists():
+        raise FileNotFoundError(
+            'precomputed/df_regional.csv missing - run '
+            'export_precomputed.py first')
+    return pd.read_csv(REGIONAL_CSV)
+
+
+def _wanted_context(observed: set[str]) -> tuple[set[str], set[tuple[str, int]]]:
+    """Compute which (prefix, level) combinations the map needs.
+
+    Args:
+        observed: Region codes seen in the ESS data.
+
+    Returns:
+        (observed codes, {(nuts_prefix, level)}) - context combinations so
+        that regions without respondents can still be drawn in grey.
+    """
+    combos = {(code[:2], len(code) - 2) for code in observed}
+    return observed, combos
+
+
+def fetch_geojson(observed: set[str]) -> dict:
+    """Download GISCO NUTS boundaries and trim to the needed regions.
+
+    Args:
+        observed: Region codes present in df_regional.
+
+    Returns:
+        FeatureCollection with all observed regions plus same-country,
+        same-level context regions (overseas territories excluded);
+        properties reduced to NUTS_ID and NUTS_NAME.
+    """
+    observed, combos = _wanted_context(observed)
+    levels = sorted({level for _, level in combos})
     features = []
-    for level, wanted in ((1, set(DE_NUTS1)), (2, set(CH_NUTS2))):
+    for level in levels:
         url = _GISCO_BASE.format(level=level)
         log.info('Downloading GISCO level %d ...', level)
-        resp = requests.get(url, timeout=120)
+        resp = requests.get(url, timeout=180)
         resp.raise_for_status()
         for feat in resp.json()['features']:
-            nuts_id = feat['properties'].get('NUTS_ID')
-            if nuts_id in wanted:
+            nuts_id = feat['properties'].get('NUTS_ID', '')
+            in_context = (nuts_id[:2], level) in combos
+            if nuts_id.startswith(OVERSEAS_PREFIXES):
+                continue
+            if nuts_id in observed or in_context:
                 features.append({
                     'type': 'Feature',
                     'geometry': feat['geometry'],
                     'properties': {
                         'NUTS_ID':   nuts_id,
-                        'NUTS_NAME': feat['properties'].get('NUTS_NAME', nuts_id),
+                        'NUTS_NAME': feat['properties'].get('NUTS_NAME',
+                                                            nuts_id),
                     },
                 })
     log.info('Kept %d region features', len(features))
@@ -85,14 +130,11 @@ def _parse_jsonstat(payload: dict) -> pd.DataFrame:
     """
     dims  = payload['id']
     sizes = payload['size']
-    # index position of each category, per dimension
     cat_by_dim = []
     for dim in dims:
         index = payload['dimension'][dim]['category']['index']
-        ordered = sorted(index, key=index.get)
-        cat_by_dim.append(ordered)
+        cat_by_dim.append(sorted(index, key=index.get))
 
-    # strides for converting a flat index into per-dimension positions
     strides = [1] * len(sizes)
     for i in range(len(sizes) - 2, -1, -1):
         strides[i] = strides[i + 1] * sizes[i + 1]
@@ -110,25 +152,35 @@ def _parse_jsonstat(payload: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def fetch_indicator(key: str, dataset: str, filters: dict) -> pd.DataFrame:
-    """Fetch one Eurostat regional indicator for all deep-dive regions.
+def fetch_indicator(key: str, dataset: str, filters: dict,
+                    regions: list[str]) -> pd.DataFrame:
+    """Fetch one Eurostat regional indicator for all regions (batched).
 
     Args:
         key: Indicator key (used in the output 'indicator' column).
         dataset: Eurostat dataset code.
         filters: Fixed dimension filters for the API call.
+        regions: NUTS region codes to query.
 
     Returns:
         DataFrame (region, indicator, value, year) - latest available year
-        per region; empty if the dataset has no data for these regions.
+        per region; regions the dataset does not cover are simply absent.
     """
-    params: list[tuple[str, str]] = [('format', 'JSON'), ('lang', 'EN')]
-    params += list(filters.items())
-    params += [('geo', g) for g in ALL_REGIONS]
-    resp = requests.get(_ESTAT_BASE.format(dataset=dataset),
-                        params=params, timeout=120)
-    resp.raise_for_status()
-    df = _parse_jsonstat(resp.json())
+    frames = []
+    for start in range(0, len(regions), _GEO_BATCH):
+        batch = regions[start:start + _GEO_BATCH]
+        params: list[tuple[str, str]] = [('format', 'JSON'), ('lang', 'EN')]
+        params += list(filters.items())
+        params += [('geo', g) for g in batch]
+        resp = requests.get(_ESTAT_BASE.format(dataset=dataset),
+                            params=params, timeout=180)
+        if resp.status_code != 200:
+            log.warning('%s: batch %d-%d failed (%d)', key, start,
+                        start + len(batch), resp.status_code)
+            continue
+        frames.append(_parse_jsonstat(resp.json()))
+    df = (pd.concat(frames, ignore_index=True)
+          if frames else pd.DataFrame(columns=['geo', 'time', 'value']))
     if df.empty:
         log.warning('%s: no data returned', key)
         return pd.DataFrame(columns=['region', 'indicator', 'value', 'year'])
@@ -143,14 +195,17 @@ def fetch_indicator(key: str, dataset: str, filters: dict) -> pd.DataFrame:
 
 def main() -> None:
     """Build and write both regional asset files."""
-    PRECOMPUTED_DIR.mkdir(exist_ok=True)
+    observed = set(load_observed_regions()['region'])
+    log.info('%d observed ESS11 regions', len(observed))
 
-    geojson = fetch_geojson()
+    geojson = fetch_geojson(observed)
     geo_path = PRECOMPUTED_DIR / 'nuts_regions.geojson'
     geo_path.write_text(json.dumps(geojson, separators=(',', ':')))
     log.info('Wrote %s (%d KB)', geo_path, geo_path.stat().st_size // 1024)
 
-    frames = [fetch_indicator(key, dataset, filters)
+    all_regions = sorted(f['properties']['NUTS_ID']
+                         for f in geojson['features'])
+    frames = [fetch_indicator(key, dataset, filters, all_regions)
               for key, (dataset, filters) in REGIONAL_DATASETS.items()]
     out = pd.concat(frames, ignore_index=True)
     csv_path = PRECOMPUTED_DIR / 'df_regional_indicators.csv'

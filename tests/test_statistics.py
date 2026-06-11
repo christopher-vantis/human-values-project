@@ -360,8 +360,8 @@ class TestDashboardPrecomputed:
     # --- df_regional --------------------------------------------------------------
 
     def test_df_regional_region_codes(self, df_regional) -> None:
-        """Regions are DE NUTS-1 or CH NUTS-2 codes, unique per country."""
-        assert df_regional['region'].str.match(r'^(DE.|CH..)$').all()
+        """Regions are NUTS-1/2 codes (NUTS-3 rolled up), unique per country."""
+        assert df_regional['region'].str.match(r'^[A-Z]{2}[0-9A-Z]{1,2}$').all()
         assert not df_regional.duplicated(['cntry', 'region']).any()
 
     def test_df_regional_min_n_flag(self, df_regional) -> None:
@@ -400,11 +400,13 @@ class TestDashboardPrecomputed:
         assert df_reg_ind['year'].between(2015, 2026).all()
 
     def test_geojson_features(self, geojson) -> None:
-        """GeoJSON holds the DE NUTS-1 + CH NUTS-2 features exactly once."""
+        """GeoJSON features are unique and exclude overseas territories."""
         ids = [f['properties']['NUTS_ID'] for f in geojson['features']]
         assert len(ids) == len(set(ids))
         assert sum(i.startswith('DE') for i in ids) == 16   # incl. Bremen
         assert sum(i.startswith('CH') for i in ids) == 7
+        overseas = ('FRY', 'ES70', 'PT20', 'PT30')
+        assert not any(i.startswith(overseas) for i in ids)
 
     def test_mlm_results_structure(self, mlm_results) -> None:
         """Four dimension models with sane ICCs and full coefficient sets."""
@@ -490,18 +492,24 @@ class TestCrossDatasetConsistency:
         """The correlation cross-section covers exactly the ESS11 countries."""
         assert set(df_scatter['cntry']) == set(df_main['cntry'])
 
-    def test_regional_countries_are_deep_dive(self, df_regional) -> None:
-        """Regional aggregates exist only for the deep-dive countries."""
-        assert set(df_regional['cntry']) == set(dp.DEEP_DIVE_COUNTRIES)
+    def test_regional_countries_cover_nuts_universe(self, df_regional) -> None:
+        """Regional aggregates exist for every ESS11 country with NUTS codes."""
+        expected = set(dp.ESS11_COUNTRIES) - dp.NO_NUTS_COUNTRIES
+        assert set(df_regional['cntry']) == expected
 
-    def test_gradients_countries_are_deep_dive(self, df_gradients) -> None:
-        assert set(df_gradients['cntry']) == set(dp.DEEP_DIVE_COUNTRIES)
+    def test_gradients_cover_all_countries(self, df_gradients) -> None:
+        assert set(df_gradients['cntry']) == set(dp.ESS11_COUNTRIES)
 
     def test_geojson_covers_regional_rows(self, geojson, df_regional) -> None:
-        """Every regional aggregate has a matching boundary feature."""
+        """Every regional aggregate has a boundary feature.
+
+        Documented exception: ES70 (Canarias) keeps its data (regional
+        scatter) but is excluded from the map so mainland Spain stays
+        readable.
+        """
         ids = {f['properties']['NUTS_ID'] for f in geojson['features']}
         missing = set(df_regional['region']) - ids
-        assert not missing, f'regions without geometry: {missing}'
+        assert missing <= {'ES70'}, f'regions without geometry: {missing}'
 
     def test_indicator_regions_covered_by_geojson(self, geojson,
                                                   df_reg_ind) -> None:

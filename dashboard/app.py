@@ -54,14 +54,20 @@ GEOJSON     = dp.load_geojson()
 MLM_RESULTS = dp.load_mlm_results()
 DF_IND, INDICATOR_SENTENCES = dp.load_indicators()
 
-# Regional indicators actually available per deep-dive country
-_IND_BY_COUNTRY = {
-    cntry: [key for key in dp.REGIONAL_INDICATOR_META
+# Regional indicators actually available per deep-dive country (>= 3
+# reliable regions with indicator data, otherwise the scatter is pointless)
+def _available_indicators(cntry: str) -> list[str]:
+    """Indicator keys with enough regional coverage for one country."""
+    regions = set(DF_REGIONAL[(DF_REGIONAL['cntry'] == cntry)
+                              & (~DF_REGIONAL['below_min_n'])]['region'])
+    return [key for key in dp.REGIONAL_INDICATOR_META
             if (DF_REG_IND[(DF_REG_IND['indicator'] == key)
-                           & (DF_REG_IND['region'].str.startswith(cntry))]
+                           & (DF_REG_IND['region'].isin(regions))]
                 .shape[0] >= 3)]
-    for cntry in dp.DEEP_DIVE_COUNTRIES
-}
+
+
+_IND_BY_COUNTRY = {cntry: _available_indicators(cntry)
+                   for cntry in dp.ESS11_COUNTRIES}
 
 # The heatmap is a pure function of precomputed data - build it once
 _HEATMAP_FIG = make_corr_heatmap(DF_SCATTER)
@@ -370,11 +376,15 @@ def update_td_country(country, current_indicator):
         keys[0] if keys else None)
 
     sub = DF_REGIONAL[DF_REGIONAL['cntry'] == country]
-    n_ok = int((~sub['below_min_n']).sum())
-    note = (f'{n_ok} regions with reliable estimates '
-            f'(n ≥ {dp.MIN_REGION_N}); {len(sub) - n_ok} suppressed.')
-    if country == 'DE':
-        note += ' Bremen has no ESS11 respondents.'
+    if sub.empty:
+        note = ('No NUTS regional map for this country - the social '
+                'gradients below still apply.')
+    else:
+        n_ok = int((~sub['below_min_n']).sum())
+        note = (f'{n_ok} regions with reliable estimates '
+                f'(n ≥ {dp.MIN_REGION_N}); {len(sub) - n_ok} suppressed.')
+        if country == 'DE':
+            note += ' Bremen has no ESS11 respondents.'
     return data, value, note
 
 
@@ -399,7 +409,16 @@ def update_td_choropleth(country, score):
 def update_td_scatter(country, score, indicator):
     """Regional value score vs. the chosen Eurostat indicator."""
     if not indicator:
-        raise PreventUpdate
+        # Countries without regional data (IL, UA): explicit empty state
+        # instead of a stale figure from the previous country
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        fig.add_annotation(
+            text='No regional indicators available for this country.',
+            x=0.5, y=0.5, xref='paper', yref='paper', showarrow=False,
+            font=dict(size=13, color=theme.MUTED))
+        fig.update_layout(height=440)
+        return fig, ''
     meta = dp.REGIONAL_INDICATOR_META[indicator]
     fig = make_regional_scatter(DF_REGIONAL, DF_REG_IND, GEOJSON, country,
                                 score, SCORE_LABELS[score],
